@@ -23,7 +23,8 @@
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173 ，未設定 .env.local 即為展示模式
+npm run dev          # http://localhost:5173 ，有 .env.local 會連正式資料庫，沒有則為展示模式
+npm run dev:demo     # 強制展示模式（不論是否有 .env.local），測試 UI 或流程時使用
 ```
 
 展示模式帳號：登入頁有快速登入按鈕（六角科技窗口 `org@demo.local`、參與聯隊的六角能源窗口 `energy@demo.local`、
@@ -44,8 +45,10 @@ npm run build        # 型別檢查 + 打包到 dist/
    （或使用 CLI：`npx supabase link --project-ref <ref>` 後 `npx supabase db push`）。
 3. 設定 Auth：**Authentication → URL Configuration** 的 Site URL / Redirect URLs 加入正式網址
    （例如 `https://<帳號>.github.io/<repo>/`）與 `http://localhost:5173`，註冊驗證信才會導回網站。
+   Supabase 內建寄信服務只會寄給專案成員，未設定自訂 SMTP 前，建議在 **Sign In / Providers → Email** 關閉
+   「Confirm email」（沒有邀請碼的帳號無法綁定公司，看不到任何資料）。
 4. 複製 `.env.example` 為 `.env.local`，填入 Project URL 與 Publishable key（Project Settings → API）。
-5. 建立管理員：先在網站註冊帳號，再到 SQL Editor 執行
+5. 建立管理員：先在網站註冊帳號（**不要**輸入邀請碼綁定公司），再到 SQL Editor 執行
    ```sql
    update public.profiles set role = 'super_admin' where email = '你的信箱';
    ```

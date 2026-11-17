@@ -130,11 +130,37 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
   );
 }
 
-export function HexLogo({ size = 28 }: { size?: number }) {
+/** 系統狀態標籤：等寬字、大寫、脈動萊姆點 */
+export function StatusTag({
+  children,
+  off = false,
+  className = '',
+  title,
+}: {
+  children: ReactNode;
+  /** true 時圓點改為紅色（例如報名已截止） */
+  off?: boolean;
+  className?: string;
+  title?: string;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <path d="M16 2 28.1 9v14L16 30 3.9 23V9z" fill="var(--primary)" />
-      <path d="M16 9.5 22.4 13v7L16 23.5 9.6 20v-7z" fill="var(--accent)" />
-    </svg>
+    <span className={`status-tag ${off ? 'status-off' : ''} ${className}`} title={title}>
+      <span className="status-dot" aria-hidden />
+      {children}
+    </span>
+  );
+}
+
+/** 標題上方的等寬小標（例如 ADMIN CONSOLE） */
+export function Eyebrow({ children }: { children: ReactNode }) {
+  return <div className="eyebrow">{children}</div>;
+}
+
+/** 品牌標誌：萊姆圓角方塊 + 黑色字首 */
+export function BrandMark({ letter = 'H' }: { letter?: string }) {
+  return (
+    <span className="brand-mark" aria-hidden>
+      {letter}
+    </span>
   );
 }

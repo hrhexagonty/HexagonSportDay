@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { homePathFor, useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/Toast';
-import { Field, Tabs } from '../components/ui';
+import { Eyebrow, Field, Tabs } from '../components/ui';
 import { api } from '../lib/api';
 import { DEMO_ACCOUNTS } from '../lib/api/demoSeed';
 
@@ -56,8 +56,13 @@ export default function Login() {
   return (
     <div className="auth-wrap">
       <div className="card auth-card">
-        <h1>單位窗口登入</h1>
-        <p className="muted">各單位窗口登入後，可建立隊伍並填寫參賽人員。</p>
+        <div>
+          <Eyebrow>Access</Eyebrow>
+          <h1>單位窗口登入</h1>
+          <p className="muted" style={{ marginTop: '0.6rem' }}>
+            各公司窗口登入後，可建立隊伍並填寫參賽人員。
+          </p>
+        </div>
 
         <Tabs
           value={mode}

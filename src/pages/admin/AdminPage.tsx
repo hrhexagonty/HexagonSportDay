@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ErrorBox, Loading, Tabs } from '../../components/ui';
+import { ErrorBox, Eyebrow, Loading, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAsync } from '../../lib/useAsync';
 import Exports from './Exports';
@@ -29,6 +29,7 @@ export default function AdminPage() {
     <div className="page">
       <div className="page-head">
         <div>
+          <Eyebrow>Admin console</Eyebrow>
           <h1>管理後台</h1>
           <p className="muted">掌握各公司填報進度、管理公司額度與聯隊、比賽規則、匯出名單。</p>
         </div>

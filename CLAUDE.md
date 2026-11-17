@@ -10,7 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 常用指令
 
 ```bash
-npm run dev                                  # 開發伺服器 http://localhost:5173
+npm run dev                                  # 開發伺服器（讀 .env.local → 連正式 Supabase）
+npm run dev:demo                             # 強制展示模式（vite --mode demo，.env.demo 清空連線資訊），UI 測試請用這個
 npm test                                     # 全部測試（前端單元測試 + 資料庫測試）
 npx vitest run src/lib/rules.test.ts         # 執行單一測試檔
 npx vitest run -t "checkAddEntry"            # 依名稱執行特定測試
@@ -49,7 +50,12 @@ npm run build                                # typecheck + vite build → dist/
 | 人數 / 女性下限（「未完成」，不阻擋寫入） | — | `rules.ts` 的 `evaluate*` |
 
 另外需同步的重複資料：比賽項目初始資料（migration 尾端 ↔ `src/lib/api/demoSeed.ts` 的 `DEMO_EVENTS`）、資料表欄位（migration ↔ `src/lib/types.ts`）。
-migration 一旦套用到 Supabase 就不要再改，請新增 `supabase/migrations/<timestamp>_<name>.sql`（目前的 init 檔尚未套用到任何環境）。
+`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
+
+### 環境
+- 本機 `.env.local`（不提交）已指向**正式** Supabase：`npm run dev` 的操作會寫入正式資料庫。測試請用 `npm run dev:demo`（`.claude/launch.json` 的 `dev-demo`，port 5174）。
+- GitHub repo `hrhexagonty/HexagonSportDay` 的 Actions secrets 存放相同的 URL / publishable key；網站：https://hrhexagonty.github.io/HexagonSportDay/
+- Supabase Auth 建議關閉「Confirm email」：內建寄信服務只寄給專案成員，公司窗口收不到驗證信（未設定自訂 SMTP 前）。
 
 ### 前端路由與部署
 - 使用 `HashRouter` + `vite.config.ts` 的 `base: './'`（GitHub Pages 無 SPA fallback）；頁內錨點不可用 `href="#..."`，請用 `scrollIntoView`。
@@ -57,3 +63,15 @@ migration 一旦套用到 Supabase 就不要再改，請新增 `supabase/migrati
 - 批次匯入欄位順序定義在 `src/lib/importParse.ts` 的 `IMPORT_COLUMNS`（生日支援民國年）。
 - 部署：`.github/workflows/deploy.yml` 推送 `main` 即測試 + 建置 + 部署；Supabase 連線資訊放 GitHub Actions secrets。
 - 資料載入用 `src/lib/useAsync.ts`（reload 時保留舊資料避免閃爍）；訊息用 `useToast()`。
+
+## UI 設計規範（Obsidian & Lime 玻璃擬態）
+
+全站樣式集中在 `src/styles.css`，色彩 / 圓角 / 字型都是 `:root` 的 CSS 變數，新增樣式請沿用變數與既有 class，不要寫死色碼。
+- **只有深色**：視窗 `#000`、浮動外殼 `#0c0c0c`（`.viewport > .shell`，最大寬 1600px、圓角 2.5rem）；主色萊姆 `#ccff00`（`--lime`）、輔色 `#10b981`（`--emerald`）；文字 `#ebebeb` / 60% / 30%。
+- **字型**：Space Grotesk（標題、內文）、JetBrains Mono（技術標籤，大寫、拉開字距）、中文由 Noto Sans TC 補字（三者都在 `index.html` 由 Google Fonts 載入），不要用系統字型。
+- **玻璃**：`rgba(255,255,255,.03)` + `blur(16px)` + `1px rgba(255,255,255,.1)` 邊框（`.glass`、`.card`、`.stat`、`.bento-card`）；容器圓角至少 2rem；按鈕、分頁、徽章一律膠囊形。表格列不要加 `backdrop-filter`（效能）。
+- **主要按鈕**：`.btn-primary`（Neon Pulse：萊姆底黑字、光暈、hover 放大 1.05）；次要 `.btn`（玻璃）；白色 `.btn-white`（導覽列右側）；首頁頁尾 `.btn-mega`（hover 白底由下滑上）。
+- **元件**：`StatusTag`（等寬字 + 脈動萊姆點）、`Eyebrow`（標題上方等寬小標，例如 `ADMIN CONSOLE`）、`BrandMark`，定義在 `src/components/ui.tsx`；內頁標題一律「Eyebrow + h1」。
+- **質感**：外殼背景的 60px 格線、光暈球（blur 120px）、15% 雜訊由 `Layout.tsx` 的 `ShellEffects` 提供；首頁才有大型頁尾（HEXAGON 浮水印 + CTA），內頁為精簡頁尾。
+- **中文排版**：斜體漸層（`.hero-title-accent`）只用在英文字；-0.06em 緊字距只用在大型展示字（hero、大數字），一般中文標題用 -0.03em。
+- 首頁為 Hero（12 欄分割）→ Bento（4 欄，資料驅動：大卡為各項目名額長條、高卡為報名規則、健力為萊姆強調卡）→ 淺灰對比區（報名流程 + 個資說明）。窄於 1100px 時 Hero 改單欄（12 欄 × 大間距會撐出最小寬度）。

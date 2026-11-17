@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/Toast';
-import { Badge, EmptyState, ErrorBox, Field, Loading, ProgressBar, StatusBadge } from '../components/ui';
+import { Badge, EmptyState, ErrorBox, Eyebrow, Field, Loading, ProgressBar, StatusBadge } from '../components/ui';
 import { api } from '../lib/api';
 import { blankToNull, formatDateTime } from '../lib/format';
 import { entriesOfMembers, evaluateTeam, isMergedTeam, registrationOpen, soloTeamCount, type TeamStatus } from '../lib/rules';
@@ -153,6 +153,7 @@ export default function OrgDashboard() {
     <div className="page">
       <div className="page-head">
         <div>
+          <Eyebrow>Company console</Eyebrow>
           <h1>{org.name}</h1>
           <p className="muted">
             自組隊伍 <b>{solo}</b> / {org.team_quota} 隊

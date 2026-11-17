@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/Toast';
-import { Badge, EmptyState, ErrorBox, Field, IssueList, Loading, StatusBadge, Tabs } from '../../components/ui';
+import { Badge, EmptyState, ErrorBox, Eyebrow, Field, IssueList, Loading, StatusBadge, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';
 import { blankToNull } from '../../lib/format';
 import { evaluateTeam, isMergedTeam, registrationOpen } from '../../lib/rules';
@@ -79,6 +79,7 @@ function TeamInfo({ data }: { data: TeamPageData }) {
   return (
     <div className="page-head">
       <div>
+        <Eyebrow>{data.merged ? 'Merged team' : 'Team'}</Eyebrow>
         <div className="title-row">
           <h1>{team.name}</h1>
           {data.merged && <Badge tone="accent">聯隊</Badge>}

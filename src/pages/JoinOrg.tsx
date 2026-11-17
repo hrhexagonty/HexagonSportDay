@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { homePathFor, useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/Toast';
-import { Field } from '../components/ui';
+import { Eyebrow, Field } from '../components/ui';
 import { api } from '../lib/api';
 
 export default function JoinOrg() {
@@ -31,8 +31,13 @@ export default function JoinOrg() {
   return (
     <div className="auth-wrap">
       <div className="card auth-card">
-        <h1>綁定所屬單位</h1>
-        <p className="muted">請輸入活動小組提供的單位邀請碼。綁定後即可建立隊伍並填寫名單；同一單位可由多位窗口共同填寫。</p>
+        <div>
+          <Eyebrow>Invite code</Eyebrow>
+          <h1>綁定所屬公司</h1>
+          <p className="muted" style={{ marginTop: '0.6rem' }}>
+            請輸入活動小組提供的公司邀請碼。綁定後即可建立隊伍並填寫名單；同一公司可由多位窗口共同填寫。
+          </p>
+        </div>
         <form onSubmit={submit} className="stack">
           <Field label="單位邀請碼">
             <input
