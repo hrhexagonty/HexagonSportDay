@@ -97,19 +97,16 @@ export function createDemoApi(): DataApi {
   // ---- 邀請碼與窗口綁定（模擬 team_invites / team_contacts 與 bind_team_contact） ----
   const contactCount = (teamId: string) => db.contacts.filter((c) => c.team_id === teamId).length;
 
-  /** 檢查邀請碼與隊伍相符且尚有名額，回傳邀請碼對應的公司 id */
-  function checkInvite(teamId: string, code: string): string {
-    const inv = db.invites.find((i) => i.invite_code === normalizeInviteCode(code));
+  const findInvite = (code: string) => db.invites.find((i) => i.invite_code === normalizeInviteCode(code));
+
+  /** 模擬 bind_team_contact：邀請碼需與隊伍相符 → 不可重複綁定 → 窗口人數未滿 */
+  function bind(userId: string, { teamId, inviteCode }: JoinInput) {
+    const inv = findInvite(inviteCode);
     if (!inv || inv.team_id !== teamId) return fail('邀請碼錯誤，或與所選隊伍不符');
+    if (db.contacts.some((c) => c.user_id === userId && c.team_id === teamId)) fail('此帳號已是該隊窗口');
     const team = db.teams.find((t) => t.id === teamId) ?? fail('找不到隊伍');
     if (contactCount(teamId) >= team.contact_limit) fail(`此隊窗口名額已滿（${team.contact_limit} 人），請洽活動小組`);
-    return inv.org_id;
-  }
-
-  function bind(userId: string, { teamId, inviteCode }: JoinInput) {
-    const orgId = checkInvite(teamId, inviteCode);
-    if (db.contacts.some((c) => c.user_id === userId && c.team_id === teamId)) fail('此帳號已是該隊窗口');
-    db.contacts.push({ user_id: userId, team_id: teamId, org_id: orgId, created_at: new Date().toISOString() });
+    db.contacts.push({ user_id: userId, team_id: teamId, org_id: inv.org_id, created_at: new Date().toISOString() });
   }
 
   function newInviteCode(): string {
@@ -169,11 +166,25 @@ export function createDemoApi(): DataApi {
       notify();
     },
 
-    async signUp(email, password, join) {
+    async registerForTeam(email, password, join) {
       const normalized = email.trim().toLowerCase();
       if (!/^\S+@\S+\.\S+$/.test(normalized)) fail('請輸入有效的 Email');
       if (password.length < 6) fail('密碼至少 6 個字元');
-      if (db.users.some((x) => x.email === normalized)) fail('此信箱已註冊：請改用「登入」，登入後可在「我的隊伍」輸入邀請碼加入其他隊伍');
+      const existing = db.users.find((x) => x.email === normalized);
+      if (existing) {
+        // 同一位窗口代表多隊：需輸入原本的密碼，把這一隊加入同一個帳號
+        if (existing.password !== password) fail('此信箱已註冊：請輸入該帳號原本的密碼，即可把這一隊加入同一個帳號');
+        if (existing.role === 'super_admin') fail('管理員帳號不需綁定隊伍');
+        try {
+          bind(existing.id, join);
+        } catch (e) {
+          if (!(e instanceof Error && e.message.includes('已是該隊窗口'))) throw e;
+        }
+        db.sessionUserId = existing.id;
+        commit();
+        notify();
+        return { needsEmailConfirm: false, existingAccount: true };
+      }
       const id = crypto.randomUUID();
       // 先綁定再建立帳號：綁定失敗時不會留下帳號（同 handle_new_user）
       bind(id, join);
@@ -181,7 +192,7 @@ export function createDemoApi(): DataApi {
       db.sessionUserId = id;
       commit();
       notify();
-      return { needsEmailConfirm: false };
+      return { needsEmailConfirm: false, existingAccount: false };
     },
 
     async signOut() {
@@ -190,16 +201,16 @@ export function createDemoApi(): DataApi {
       notify();
     },
 
-    async listTeamOptions() {
-      return db.teams
-        .filter((t) => t.org_ids.length > 0)
-        .map((t) => ({ id: t.id, name: t.name, is_full: contactCount(t.id) >= t.contact_limit }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'));
-    },
-
-    async checkTeamInvite(teamId, inviteCode) {
-      const orgId = checkInvite(teamId, inviteCode);
-      return db.organizations.find((o) => o.id === orgId)?.name ?? '';
+    async lookupTeamInvite(inviteCode) {
+      const inv = findInvite(inviteCode) ?? fail('邀請碼錯誤，請確認活動小組提供的邀請碼');
+      const team = db.teams.find((t) => t.id === inv.team_id) ?? fail('找不到隊伍');
+      return {
+        teamId: team.id,
+        teamName: team.name,
+        orgId: inv.org_id,
+        orgName: db.organizations.find((o) => o.id === inv.org_id)?.name ?? '',
+        isFull: contactCount(team.id) >= team.contact_limit,
+      };
     },
 
     async joinTeam(teamId, inviteCode) {

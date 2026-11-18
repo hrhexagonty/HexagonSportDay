@@ -12,7 +12,6 @@ import type {
   Team,
   TeamContact,
   TeamInvite,
-  TeamOption,
 } from '../types';
 import type { DataApi, SessionInfo, SessionTeam } from './types';
 
@@ -117,30 +116,58 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       if (error) throw new Error(translateAuthError(error.message));
     },
 
-    async signUp(email, password, join) {
+    async registerForTeam(email, password, join) {
+      const code = normalizeInviteCode(join.inviteCode);
       // 隊伍與邀請碼放在 user metadata，由 DB 的 handle_new_user 於建立帳號時一併綁定
       const { data, error } = await sb.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: window.location.origin + window.location.pathname,
-          data: { team_id: join.teamId, invite_code: normalizeInviteCode(join.inviteCode) },
+          data: { team_id: join.teamId, invite_code: code },
         },
       });
-      if (error) throw new Error(translateAuthError(error.message));
-      return { needsEmailConfirm: !data.session };
+      // 信箱已註冊：關閉 Confirm email 時回傳錯誤；開啟時回傳沒有 identities 的假使用者
+      const exists = error ? /already registered|already exists/i.test(error.message) : data.user?.identities?.length === 0;
+      if (error && !exists) throw new Error(translateAuthError(error.message));
+      if (!exists) return { needsEmailConfirm: !data.session, existingAccount: false };
+
+      // 同一位窗口代表多隊：以原本的密碼登入後，把這一隊加入同一個帳號
+      const signIn = await sb.auth.signInWithPassword({ email, password });
+      if (signIn.error) {
+        throw new Error(
+          /invalid login credentials/i.test(signIn.error.message)
+            ? '此信箱已註冊：請輸入該帳號原本的密碼，即可把這一隊加入同一個帳號'
+            : translateAuthError(signIn.error.message),
+        );
+      }
+      try {
+        await run(sb.rpc('join_team', { p_team_id: join.teamId, p_code: code }));
+      } catch (e) {
+        // 已是該隊窗口視為成功；其他錯誤（名額已滿等）先登出，讓使用者留在註冊頁看到錯誤
+        if (!(e instanceof Error && e.message.includes('已是該隊窗口'))) {
+          await sb.auth.signOut();
+          throw e;
+        }
+      }
+      return { needsEmailConfirm: false, existingAccount: true };
     },
 
     async signOut() {
       await sb.auth.signOut();
     },
 
-    async listTeamOptions() {
-      return run(sb.rpc('team_options')) as Promise<TeamOption[]>;
-    },
-
-    async checkTeamInvite(teamId, inviteCode) {
-      return run(sb.rpc('check_team_invite', { p_team_id: teamId, p_code: normalizeInviteCode(inviteCode) })) as Promise<string>;
+    async lookupTeamInvite(inviteCode) {
+      const rows = (await run(sb.rpc('lookup_team_invite', { p_code: normalizeInviteCode(inviteCode) }))) as {
+        team_id: string;
+        team_name: string;
+        org_id: string;
+        org_name: string;
+        is_full: boolean;
+      }[];
+      const r = rows?.[0];
+      if (!r) throw new Error('邀請碼錯誤，請確認活動小組提供的邀請碼');
+      return { teamId: r.team_id, teamName: r.team_name, orgId: r.org_id, orgName: r.org_name, isFull: r.is_full };
     },
 
     async joinTeam(teamId, inviteCode) {

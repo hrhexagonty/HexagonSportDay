@@ -29,17 +29,17 @@ npm run build                                # typecheck + vite build → dist/
 - 頁面一律透過 `src/lib/api/index.ts` 匯出的 `api`（`DataApi`，定義於 `src/lib/api/types.ts`）讀寫資料，**不要在頁面直接呼叫 supabase-js**。
 - 有設定 `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` → `supabase.ts`；否則 → `demo.ts`（展示模式，localStorage，key 含版本號，資料結構變更時要升版）。
 - `demo.ts` 必須模擬 Supabase 端的 RLS 可見範圍與 DB trigger 限制，兩種模式行為才會一致；新增 `DataApi` 方法時兩邊都要實作。展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`）。
-- 需要多表同交易寫入或跨權限讀取的操作走 RPC（`create_team`、`set_team_orgs`、`add_members`、`update_member`、`purge_private_data`、`join_team`、`check_team_invite`、`team_options`、`my_teams`、`org_names`），不要在前端拆成多次寫入。
+- 需要多表同交易寫入或跨權限讀取的操作走 RPC（`create_team`、`set_team_orgs`、`add_members`、`update_member`、`purge_private_data`、`join_team`、`lookup_team_invite`、`my_teams`、`org_names`），不要在前端拆成多次寫入。
 - Supabase 單次查詢上限 1000 筆，名單 / 報名紀錄用 `supabase.ts` 的 `fetchAll` 分頁抓取。
 
 ### 資料模型與可見範圍（RLS）
 `organizations`（公司）⇄ `team_orgs` ⇄ `teams` → `members` → `event_entries`；個資另存 `member_private`。
 登入以「隊伍」為單位：`team_invites`（隊伍 × 公司各一組邀請碼）、`team_contacts`（帳號 ⇄ 隊伍，多對多，記錄以哪家公司身分加入）。
 - **隊伍與公司只由管理員建立**（`create_team` 限管理員，可不指定公司 = 未分配）；後台「隊伍配置」（`src/pages/admin/TeamSetup.tsx`）把公司拖到隊伍卡上，以 `set_team_orgs` 存檔。`team_orgs` 有多家公司即為聯隊；新增 `team_orgs` 時 trigger 自動產生該組邀請碼，移除時邀請碼與窗口綁定一併刪除（仍有隊員則拒絕）。刪除公司不會刪除隊伍。
-- **窗口綁定**：`bind_team_contact`（內部函式）檢查邀請碼與所選隊伍相符、`teams.contact_limit` 未滿（advisory lock 防並行超額）。註冊時前端把 `team_id`、`invite_code` 放進 signUp 的 user metadata，由 `handle_new_user` trigger 一併綁定，失敗則整筆註冊失敗（不會留下無隊伍帳號，也不受 Confirm email 影響）；已登入帳號用 `join_team` 加入其他隊伍。
+- **窗口綁定**：`bind_team_contact`（內部函式）檢查邀請碼與所選隊伍相符、`teams.contact_limit` 未滿（advisory lock 防並行超額）。註冊時前端把 `team_id`、`invite_code` 放進 signUp 的 user metadata，由 `handle_new_user` trigger 一併綁定，失敗則整筆註冊失敗（不會留下無隊伍帳號，也不受 Confirm email 影響）；已登入帳號用 `join_team` 加入其他隊伍。同一位窗口代表多隊時共用一個帳號（Supabase 一個信箱只能一個帳號）：`registerForTeam` 遇到已註冊的信箱會以原本的密碼登入再呼叫 `join_team`。
 - `members`（姓名、性別、所屬公司 `org_id`）：同隊窗口都看得到，用於安排項目選手；但只能新增 / 修改 / 刪除**自己以該公司身分加入（`is_team_org_contact`）**的隊員。`(team_id, org_id)` 有複合外鍵指向 `team_orgs`。
 - `member_private`（身分證 / 居留證、生日、手機、尺寸、用餐、特殊需求）：**只有「該隊 × 該公司」的窗口與管理員**看得到；前端 `Member.private === null` 代表無權檢視或已被清除。`national_id` 全活動唯一。
-- `organizations`、`team_invites`、他人的 `team_contacts` 只有管理員讀得到；窗口取公司名稱用 `org_names()`，取自己的隊伍用 `my_teams()`；未登入的註冊頁用 `team_options()`（只列已分配公司的隊伍、不含邀請碼）與 `check_team_invite()`。
+- `organizations`、`team_invites`、他人的 `team_contacts` 只有管理員讀得到；窗口取公司名稱用 `org_names()`，取自己的隊伍用 `my_teams()`；未登入的註冊頁只能用 `lookup_team_invite(邀請碼)` 查出對應隊伍與公司，前台不公開隊伍清單。
 - 窗口可改隊長資料，隊名與 `contact_limit` 只有管理員能改（`teams_before_update` trigger）；刪除隊伍限管理員。
 - `event_entries` 不存 team_id，隊伍經由 member 推得；聯隊內任一公司都可為全隊安排選手。
 - `events` 為資料驅動，程式不應寫死特定項目；`category` 只影響標示（健力已不需體重）。
@@ -54,7 +54,7 @@ npm run build                                # typecheck + vite build → dist/
 | 人數 / 女性下限（「未完成」，不阻擋寫入） | — | `rules.ts` 的 `evaluate*` |
 
 另外需同步的重複資料：比賽項目初始資料（migration 尾端 ↔ `src/lib/api/demoSeed.ts` 的 `DEMO_EVENTS`）、資料表欄位（migration ↔ `src/lib/types.ts`）。
-`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入，會轉換既有資料並移除 `organizations.team_quota / invite_code`、`profiles.org_id`）需由使用者於 SQL Editor 執行，套用後同樣不可再修改。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
+`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入）已於 2026-11-18 套用；`20261119000000_invite_first.sql`（先輸入邀請碼：新增 `lookup_team_invite`、移除 `team_options` / `check_team_invite`）需由使用者於 SQL Editor 執行。已套用的 migration 不可再修改。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
 
 ### 環境
 - 本機 `.env.local`（不提交）已指向**正式** Supabase：`npm run dev` 的操作會寫入正式資料庫。測試請用 `npm run dev:demo`（`.claude/launch.json` 的 `dev-demo`，port 5174）。
@@ -81,4 +81,4 @@ npm run build                                # typecheck + vite build → dist/
 - **中文排版**：斜體漸層（`.hero-title-accent`）只用在英文字；-0.06em 緊字距只用在大型展示字（hero、大數字），一般中文標題用 -0.03em。
 - 首頁為 Hero（12 欄分割）→ 比賽項目（4 欄 Bento，資料驅動：趣味競賽各一張卡，健力為整列萊姆強調卡）→ 淺灰對比區（報名流程 + 個資說明）。窄於 1100px 時 Hero 改單欄（12 欄 × 大間距會撐出最小寬度）。
 - Hero 標題（活動名稱、Sport Day 年份）一律單行不換行，寬度不足時由 `Home.tsx` 的 `FitLine` 自動縮小字級。
-- 頁首品牌只有萊姆方塊 + 「SPORT DAY」（不放 HEXAGON 字樣與字首）；隊伍選擇用點選膠囊（`src/components/TeamPicker.tsx`），不用下拉選單。
+- 頁首品牌只有萊姆方塊 + 「SPORT DAY」（不放 HEXAGON 字樣與字首）；首次註冊與加入隊伍一律先輸入邀請碼（`src/components/InviteCode.tsx`），由邀請碼帶出隊伍，不讓使用者自選隊伍。

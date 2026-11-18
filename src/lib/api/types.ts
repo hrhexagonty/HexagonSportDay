@@ -13,7 +13,6 @@ import type {
   TeamContact,
   TeamInput,
   TeamInvite,
-  TeamOption,
   TeamPatch,
 } from '../types';
 
@@ -39,6 +38,16 @@ export interface JoinInput {
   inviteCode: string;
 }
 
+/** 以邀請碼查出的隊伍與公司（邀請碼本身就對應「隊伍 × 公司」） */
+export interface InviteInfo {
+  teamId: string;
+  teamName: string;
+  orgId: string;
+  orgName: string;
+  /** 窗口名額已滿 */
+  isFull: boolean;
+}
+
 /**
  * 資料存取介面。頁面只透過這個介面讀寫資料，實作有兩種：
  * - supabase.ts：正式環境，權限由 Supabase RLS 控管
@@ -57,13 +66,18 @@ export interface DataApi {
   getSession(): Promise<SessionInfo | null>;
   onAuthChange(cb: () => void): () => void;
   signIn(email: string, password: string): Promise<void>;
-  /** 註冊並以邀請碼綁定隊伍（綁定失敗則不會建立帳號） */
-  signUp(email: string, password: string, join: JoinInput): Promise<{ needsEmailConfirm: boolean }>;
+  /**
+   * 首次註冊：新信箱建立帳號並綁定隊伍（綁定失敗則不會建立帳號）；
+   * 已註冊的信箱（同一位窗口代表多隊）需輸入原本的密碼，登入後把這一隊加入同一個帳號。
+   */
+  registerForTeam(
+    email: string,
+    password: string,
+    join: JoinInput,
+  ): Promise<{ needsEmailConfirm: boolean; existingAccount: boolean }>;
   signOut(): Promise<void>;
-  /** 註冊用的隊伍清單（未登入可呼叫） */
-  listTeamOptions(): Promise<TeamOption[]>;
-  /** 註冊前檢查邀請碼是否與隊伍相符且尚有名額，回傳公司名稱（未登入可呼叫） */
-  checkTeamInvite(teamId: string, inviteCode: string): Promise<string>;
+  /** 以邀請碼查出隊伍與公司（未登入可呼叫；前台不公開隊伍清單） */
+  lookupTeamInvite(inviteCode: string): Promise<InviteInfo>;
   /** 已登入帳號以邀請碼加入（其他）隊伍，回傳隊名 */
   joinTeam(teamId: string, inviteCode: string): Promise<string>;
 

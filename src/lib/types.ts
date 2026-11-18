@@ -51,14 +51,6 @@ export interface Team {
   org_ids: string[];
 }
 
-/** 前台註冊用的隊伍選項（未登入可取得；只含已分配公司的隊伍） */
-export interface TeamOption {
-  id: string;
-  name: string;
-  /** 窗口名額已滿 */
-  is_full: boolean;
-}
-
 /** 隊伍 × 公司的邀請碼（僅管理員可讀）：窗口輸入哪組碼就歸屬哪家公司 */
 export interface TeamInvite {
   team_id: string;

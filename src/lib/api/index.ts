@@ -2,7 +2,7 @@ import { createDemoApi } from './demo';
 import { createSupabaseApi } from './supabase';
 import type { DataApi } from './types';
 
-export type { DataApi, JoinInput, SessionInfo, SessionTeam } from './types';
+export type { DataApi, InviteInfo, JoinInput, SessionInfo, SessionTeam } from './types';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;

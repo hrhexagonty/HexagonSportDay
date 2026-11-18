@@ -169,18 +169,18 @@ describe('管理員建立公司與隊伍', () => {
 });
 
 describe('前台註冊與綁定隊伍', () => {
-  it('未登入可取得隊伍下拉選單（不含未分配的隊伍），但讀不到邀請碼', async () => {
-    const r = await asAnon<{ name: string; is_full: boolean }>('select name, is_full from team_options() order by name');
-    expect(r.rows.map((x) => x.name).sort()).toEqual(['乙丙聯隊', '甲一隊', '甲二隊', '舊隊']);
-    expect(r.rows.every((x) => !x.is_full)).toBe(true);
+  it('未登入先輸入邀請碼，帶出對應的隊伍與公司；前台取不到隊伍清單與邀請碼', async () => {
+    const r = await asAnon<{ team_id: string; team_name: string; org_name: string; is_full: boolean }>(
+      'select team_id, team_name, org_name, is_full from lookup_team_invite($1)',
+      [` ${(await codeOf('乙丙聯隊', '丙')).toLowerCase()} `],
+    );
+    expect(r.rows).toEqual([{ team_id: team.merged, team_name: '乙丙聯隊', org_name: '丙', is_full: false }]);
+    await expect(asAnon('select * from lookup_team_invite($1)', ['NOPE0000'])).rejects.toThrow('邀請碼錯誤');
     await expect(asAnon('select * from team_invites')).rejects.toThrow('permission denied');
-  });
-
-  it('註冊前檢查邀請碼：需與所選隊伍相符', async () => {
-    const r = await asAnon<{ org: string }>('select check_team_invite($1, $2) org', [team.merged, (await codeOf('乙丙聯隊', '丙')).toLowerCase()]);
-    expect(r.rows[0].org).toBe('丙');
-    await expect(asAnon('select check_team_invite($1, $2)', [team.a, await codeOf('乙丙聯隊', '乙')])).rejects.toThrow('不符');
-    await expect(asAnon('select check_team_invite($1, $2)', [team.a, 'NOPE0000'])).rejects.toThrow('邀請碼錯誤');
+    const gone = await db.query<{ a: string | null; b: string | null }>(
+      `select to_regprocedure('public.team_options()')::text a, to_regprocedure('public.check_team_invite(uuid, text)')::text b`,
+    );
+    expect(gone.rows[0]).toEqual({ a: null, b: null });
   });
 
   it('註冊時依邀請碼綁定隊伍與公司；邀請碼錯誤則整筆註冊失敗', async () => {
@@ -196,11 +196,10 @@ describe('前台註冊與綁定隊伍', () => {
     expect(left.rows).toHaveLength(0);
   });
 
-  it('窗口人數達上限後無法再綁定，下拉選單標示已滿', async () => {
+  it('窗口人數達上限後無法再綁定，查詢邀請碼時標示已滿', async () => {
     await as(U.admin, 'update teams set contact_limit = 1 where id = $1', [team.a]);
     await expect(signUp(U.d, 'd@x.tw', { team_id: team.a, invite_code: 'JIA0001' })).rejects.toThrow('名額已滿');
-    await expect(asAnon('select check_team_invite($1, $2)', [team.a, 'JIA0001'])).rejects.toThrow('名額已滿');
-    const r = await asAnon<{ is_full: boolean }>('select is_full from team_options() where id = $1', [team.a]);
+    const r = await asAnon<{ is_full: boolean }>('select is_full from lookup_team_invite($1)', ['JIA0001']);
     expect(r.rows[0].is_full).toBe(true);
   });
 

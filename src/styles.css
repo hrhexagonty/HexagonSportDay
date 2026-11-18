@@ -2437,71 +2437,30 @@ textarea {
   }
 }
 
-/* ---- 隊伍點選（註冊 / 加入隊伍） ---- */
-.team-picker {
+/* ---- 首次註冊：邀請碼確認、對應隊伍 ---- */
+.invite-ok {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.invite-team {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.35rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--lime-40);
+  border-radius: var(--r-sm);
+  background: var(--lime-08);
 }
-.team-picker .search {
-  max-width: none;
-}
-.team-picks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-.team-pick {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--glass-2);
-  font-size: 0.9rem;
-  cursor: pointer;
-  user-select: none;
-  transition:
-    background 0.2s var(--ease),
-    border-color 0.2s var(--ease),
-    color 0.2s var(--ease);
-}
-.team-pick:hover {
-  border-color: var(--lime-40);
-  background: var(--glass-3);
-}
-/* 原生 radio 隱藏但保留鍵盤操作與無障礙語意 */
-.team-pick input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: inherit;
-}
-.team-pick:focus-within {
-  box-shadow: 0 0 0 3px var(--lime-15);
-}
-.team-pick.is-on {
-  color: #000;
-  font-weight: 600;
-  background: var(--lime);
-  border-color: transparent;
-  box-shadow: var(--lime-glow);
-}
-.team-pick.is-full {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.team-pick.is-full:hover {
-  border-color: var(--line);
-  background: var(--glass-2);
-}
-.team-pick small {
+.invite-team span {
   font-family: var(--mono);
   font-size: 10px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.2em;
+  color: var(--lime);
+}
+.invite-team b {
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+  color: #fff;
 }

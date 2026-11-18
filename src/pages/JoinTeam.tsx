@@ -1,34 +1,31 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { DEMO_INVITE_HINT, TeamPicker } from '../components/TeamPicker';
+import { InviteCodeForm, InviteCodeOk, InviteTeamCard } from '../components/InviteCode';
 import { useToast } from '../components/Toast';
-import { ErrorBox, Eyebrow, Field, Loading } from '../components/ui';
-import { api } from '../lib/api';
-import { normalizeInviteCode } from '../lib/inviteCode';
-import { useAsync } from '../lib/useAsync';
+import { Eyebrow } from '../components/ui';
+import { api, type InviteInfo } from '../lib/api';
 
 /** 已登入的窗口以邀請碼加入（其他）隊伍；尚未綁定任何隊伍的帳號也會被導到這裡 */
 export default function JoinTeam() {
   const { session, isAdmin, refresh } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
-  const options = useAsync(() => api.listTeamOptions(), []);
-  const [teamId, setTeamId] = useState('');
-  const [code, setCode] = useState('');
+  const [invite, setInvite] = useState<{ info: InviteInfo; code: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (isAdmin) return <Navigate to="/admin" replace />;
   const joined = session?.teams ?? [];
+  const already = !!invite && joined.some((t) => t.teamId === invite.info.teamId);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function join() {
+    if (!invite) return;
     setBusy(true);
     try {
-      const name = await api.joinTeam(teamId, code);
+      const name = await api.joinTeam(invite.info.teamId, invite.code);
       toast.ok(`已加入「${name}」`);
       await refresh();
-      navigate(`/teams/${teamId}`);
+      navigate(`/teams/${invite.info.teamId}`);
     } catch (err) {
       toast.error(err);
     } finally {
@@ -49,8 +46,8 @@ export default function JoinTeam() {
           <h1>{joined.length > 0 ? '加入其他隊伍' : '綁定參賽隊伍'}</h1>
           <p className="muted" style={{ marginTop: '0.6rem' }}>
             {joined.length > 0
-              ? '同一個帳號可以擔任多支隊伍的窗口。選擇隊伍並輸入該隊的邀請碼即可加入。'
-              : '這個帳號尚未綁定隊伍。請選擇隊伍並輸入活動小組提供的邀請碼。'}
+              ? '同一個帳號可以擔任多支隊伍的窗口。輸入該隊的邀請碼即可加入，並在「我的隊伍」同時管理。'
+              : '這個帳號尚未綁定隊伍。請輸入活動小組派發的邀請碼。'}
           </p>
         </div>
 
@@ -64,34 +61,22 @@ export default function JoinTeam() {
           </div>
         )}
 
-        {!options.data ? (
-          options.error ? (
-            <ErrorBox message={options.error} onRetry={options.reload} />
-          ) : (
-            <Loading />
-          )
+        {invite ? (
+          <div className="stack">
+            <InviteCodeOk code={invite.code} onReset={() => setInvite(null)} />
+            <InviteTeamCard info={invite.info} />
+            {already ? (
+              <div className="notice notice-info">
+                你已是這一隊的窗口。<Link to={`/teams/${invite.info.teamId}`}>前往隊伍頁 →</Link>
+              </div>
+            ) : (
+              <button className="btn btn-primary btn-block" disabled={busy} onClick={join}>
+                {busy ? '加入中…' : '加入此隊伍'}
+              </button>
+            )}
+          </div>
         ) : (
-          <form onSubmit={submit} className="stack">
-            {/* 點選元件內含 label，不可再包在 Field（label）裡 */}
-            <div className="field">
-              <span className="field-label">隊伍</span>
-              <TeamPicker options={options.data} value={teamId} onChange={setTeamId} exclude={joined.map((t) => t.teamId)} />
-            </div>
-            <Field label="隊伍邀請碼" hint="聯隊中各公司的邀請碼不同，請使用貴公司的那一組">
-              <input
-                required
-                className="input-code"
-                autoComplete="off"
-                value={code}
-                onChange={(e) => setCode(normalizeInviteCode(e.target.value))}
-                placeholder="例如 A1B2C3D4"
-              />
-            </Field>
-            <button className="btn btn-primary btn-block" disabled={busy || !teamId}>
-              {busy ? '加入中…' : '加入隊伍'}
-            </button>
-            {api.mode === 'demo' && <p className="muted small">{DEMO_INVITE_HINT}</p>}
-          </form>
+          <InviteCodeForm onFound={(info, code) => setInvite({ info, code })} />
         )}
       </div>
     </div>
