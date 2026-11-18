@@ -79,4 +79,6 @@ npm run build                                # typecheck + vite build → dist/
 - **元件**：`StatusTag`（等寬字 + 脈動萊姆點）、`Eyebrow`（標題上方等寬小標，例如 `ADMIN CONSOLE`）、`BrandMark`，定義在 `src/components/ui.tsx`；內頁標題一律「Eyebrow + h1」。
 - **質感**：外殼背景的 60px 格線、光暈球（blur 120px）、15% 雜訊由 `Layout.tsx` 的 `ShellEffects` 提供；首頁才有大型頁尾（HEXAGON 浮水印 + CTA），內頁為精簡頁尾。
 - **中文排版**：斜體漸層（`.hero-title-accent`）只用在英文字；-0.06em 緊字距只用在大型展示字（hero、大數字），一般中文標題用 -0.03em。
-- 首頁為 Hero（12 欄分割）→ Bento（4 欄，資料驅動：大卡為各項目名額長條、高卡為報名規則、健力為萊姆強調卡）→ 淺灰對比區（報名流程 + 個資說明）。窄於 1100px 時 Hero 改單欄（12 欄 × 大間距會撐出最小寬度）。
+- 首頁為 Hero（12 欄分割）→ 比賽項目（4 欄 Bento，資料驅動：趣味競賽各一張卡，健力為整列萊姆強調卡）→ 淺灰對比區（報名流程 + 個資說明）。窄於 1100px 時 Hero 改單欄（12 欄 × 大間距會撐出最小寬度）。
+- Hero 標題（活動名稱、Sport Day 年份）一律單行不換行，寬度不足時由 `Home.tsx` 的 `FitLine` 自動縮小字級。
+- 頁首品牌只有萊姆方塊 + 「SPORT DAY」（不放 HEXAGON 字樣與字首）；隊伍選擇用點選膠囊（`src/components/TeamPicker.tsx`），不用下拉選單。

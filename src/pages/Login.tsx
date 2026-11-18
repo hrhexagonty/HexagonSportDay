@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { homePathFor, useAuth } from '../auth/AuthContext';
-import { DEMO_INVITE_HINT, TeamSelect } from '../components/TeamSelect';
+import { DEMO_INVITE_HINT, TeamPicker } from '../components/TeamPicker';
 import { useToast } from '../components/Toast';
 import { ErrorBox, Eyebrow, Field, Loading, Tabs } from '../components/ui';
 import { api } from '../lib/api';
@@ -109,7 +109,7 @@ function SignUpForm() {
   return (
     <form onSubmit={submit} className="stack-lg">
       <Step no="01" title="選擇隊伍">
-        <TeamSelect options={options.data} value={teamId} onChange={setTeamId} />
+        <TeamPicker options={options.data} value={teamId} onChange={setTeamId} />
       </Step>
       <Step no="02" title="設定信箱與密碼">
         <Field label="Email">

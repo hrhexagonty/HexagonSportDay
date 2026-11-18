@@ -111,8 +111,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <Link to="/" className="brand" aria-label="回首頁">
             <BrandMark />
             <span className="brand-text">
-              <b>HEXAGON</b>
-              <small>SPORT DAY</small>
+              <b>SPORT DAY</b>
             </span>
           </Link>
           <nav className="nav">

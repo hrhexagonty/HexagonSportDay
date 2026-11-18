@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { homePathFor, useAuth } from '../auth/AuthContext';
 import { Badge, ErrorBox, Eyebrow, Loading, StatusTag } from '../components/ui';
@@ -18,10 +18,34 @@ const STEPS: [string, string][] = [
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-function shortDate(iso: string | null): string {
-  if (!iso) return '待公告';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
+/** 單行標題：保持一行不換行，寬度不足時自動縮小字級（活動名稱由管理員設定，長度不固定） */
+function FitLine({ text, className }: { text: string; className: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.fontSize = '';
+      const ratio = el.clientWidth / el.scrollWidth;
+      if (ratio < 1) el.style.fontSize = `${Math.floor(parseFloat(getComputedStyle(el).fontSize) * ratio * 0.98)}px`;
+    };
+    fit();
+    // 只在寬度改變時重算（調整字級會改變高度，避免 ResizeObserver 反覆觸發）
+    let lastWidth = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) return;
+      lastWidth = el.clientWidth;
+      fit();
+    });
+    ro.observe(el);
+    void document.fonts?.ready.then(fit);
+    return () => ro.disconnect();
+  }, [text]);
+  return (
+    <span ref={ref} className={className}>
+      {text}
+    </span>
+  );
 }
 
 /** 以 CSS 自訂屬性傳入比例（長條圖高度 / 寬度） */
@@ -44,10 +68,10 @@ function FunCard({ event, index }: { event: SportEvent; index: number }) {
   );
 }
 
-/** 強調卡：實心萊姆底（健力比賽） */
+/** 強調卡：實心萊姆底（健力比賽），佔滿整列 */
 function AccentCard({ event, index }: { event: SportEvent; index: number }) {
   return (
-    <article className="bento-card bento-accent bento-wide">
+    <article className="bento-card bento-accent bento-full">
       <div className="bento-top">
         <Badge>{CATEGORY_LABEL[event.category]}</Badge>
         <code className="bento-index">{pad2(index)} / POWER</code>
@@ -97,8 +121,6 @@ export default function Home() {
   const fun = sorted.filter((e) => e.category === 'fun');
   const power = sorted.filter((e) => e.category === 'powerlifting');
   const maxSlots = Math.max(1, ...sorted.map((e) => e.max_per_team));
-  const totalSlots = sorted.reduce((s, e) => s + e.max_per_team, 0);
-  const minPeople = Math.ceil(totalSlots / settings.max_events_per_member);
   const year = settings.event_date?.slice(0, 4);
   const cta = homePathFor(session);
 
@@ -109,8 +131,8 @@ export default function Home() {
         <div className="hero-copy">
           <StatusTag off={!open}>{open ? 'Registration open' : 'Registration closed'}</StatusTag>
           <h1 className="hero-title">
-            <span className="hero-title-main">{settings.event_title}</span>
-            <em className="hero-title-accent">Sport Day{year ? ` ${year}` : ''}</em>
+            <FitLine className="hero-title-main" text={settings.event_title} />
+            <FitLine className="hero-title-accent" text={`Sport Day${year ? ` ${year}` : ''}`} />
           </h1>
           <dl className="hero-meta">
             <div>
@@ -196,64 +218,6 @@ export default function Home() {
           <p className="muted">人數規則由活動小組設定，系統會即時檢核每隊的報名狀態。</p>
         </div>
         <div className="bento">
-          <article className="bento-card bento-large">
-            <code className="bento-index">SLOTS PER TEAM</code>
-            <div className="bento-big">
-              {totalSlots}
-              <span>個名額 / 隊</span>
-            </div>
-            <p className="muted">
-              每人最多報名 {settings.max_events_per_member} 項，每隊至少需要 {minPeople} 人才能填滿所有項目。
-            </p>
-            <div className="bars">
-              {sorted.map((ev) => (
-                <div key={ev.id} className={`bar ${ev.category === 'powerlifting' ? 'bar-pl' : ''}`}>
-                  <code>{ev.max_per_team}</code>
-                  <span className="bar-fill" style={cssVar('--h', `${(ev.max_per_team / maxSlots) * 100}%`)} />
-                  <label>{ev.name}</label>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="bento-card bento-tall">
-            <code className="bento-index">RULES</code>
-            <h3>報名規則</h3>
-            <p className="muted small">由活動小組設定。超過上限的資料無法送出，未達下限會標示「未完成」提醒補齊。</p>
-            <ul className="swatches">
-              <li>
-                <i className="sw sw-lime" />
-                <div>
-                  <b>
-                    {settings.team_min_size}–{settings.team_max_size} 人
-                  </b>
-                  <code>TEAM SIZE</code>
-                </div>
-              </li>
-              <li>
-                <i className="sw sw-emerald" />
-                <div>
-                  <b>最多 {settings.max_events_per_member} 項</b>
-                  <code>PER MEMBER</code>
-                </div>
-              </li>
-              <li>
-                <i className="sw sw-white" />
-                <div>
-                  <b>{settings.total_team_target} 隊</b>
-                  <code>TEAMS</code>
-                </div>
-              </li>
-              <li>
-                <i className="sw sw-grey" />
-                <div>
-                  <b>{shortDate(settings.registration_deadline)}</b>
-                  <code>DEADLINE</code>
-                </div>
-              </li>
-            </ul>
-          </article>
-
           {fun.map((ev, i) => (
             <FunCard key={ev.id} event={ev} index={i + 1} />
           ))}

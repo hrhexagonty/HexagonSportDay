@@ -156,11 +156,7 @@ export function Eyebrow({ children }: { children: ReactNode }) {
   return <div className="eyebrow">{children}</div>;
 }
 
-/** 品牌標誌：萊姆圓角方塊 + 黑色字首 */
-export function BrandMark({ letter = 'H' }: { letter?: string }) {
-  return (
-    <span className="brand-mark" aria-hidden>
-      {letter}
-    </span>
-  );
+/** 品牌標誌：萊姆圓角方塊 */
+export function BrandMark() {
+  return <span className="brand-mark" aria-hidden />;
 }

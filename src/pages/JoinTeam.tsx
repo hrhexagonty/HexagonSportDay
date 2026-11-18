@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { DEMO_INVITE_HINT, TeamSelect } from '../components/TeamSelect';
+import { DEMO_INVITE_HINT, TeamPicker } from '../components/TeamPicker';
 import { useToast } from '../components/Toast';
 import { ErrorBox, Eyebrow, Field, Loading } from '../components/ui';
 import { api } from '../lib/api';
@@ -72,9 +72,11 @@ export default function JoinTeam() {
           )
         ) : (
           <form onSubmit={submit} className="stack">
-            <Field label="隊伍">
-              <TeamSelect options={options.data} value={teamId} onChange={setTeamId} exclude={joined.map((t) => t.teamId)} />
-            </Field>
+            {/* 點選元件內含 label，不可再包在 Field（label）裡 */}
+            <div className="field">
+              <span className="field-label">隊伍</span>
+              <TeamPicker options={options.data} value={teamId} onChange={setTeamId} exclude={joined.map((t) => t.teamId)} />
+            </div>
             <Field label="隊伍邀請碼" hint="聯隊中各公司的邀請碼不同，請使用貴公司的那一組">
               <input
                 required
