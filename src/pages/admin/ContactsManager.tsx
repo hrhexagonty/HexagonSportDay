@@ -203,7 +203,7 @@ export default function ContactsManager({ data, onChanged }: { data: AdminData; 
                             <span>{c.email}</span>
                             {merged && <span className="muted small">{orgName.get(c.org_id)}</span>}
                             <button
-                              className="team-chip-x"
+                              className="drag-chip-x"
                               aria-label={`解除 ${c.email} 的窗口身分`}
                               title="解除綁定"
                               onClick={() => removeContact(t, c)}

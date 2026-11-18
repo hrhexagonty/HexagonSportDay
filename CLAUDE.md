@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 專案概要
 
-大型運動會（約 24 隊、900 人）報名平台：管理員預先建立公司與隊伍，並以拖曳把隊伍放到公司底下（同一隊放到多家公司 = 聯隊）；各隊窗口在前台「選隊伍 → 設定信箱密碼 → 輸入邀請碼」註冊後，填寫隊員（含身分證等個資），並為 4 項趣味競賽（同心鼓顛球、四關障礙接力、嗨ROX競賽、毛毛蟲大隊接力）＋ 1 項健力比賽（每隊 10 人、至少 4 女）安排選手。
+大型運動會（約 24 隊、900 人）報名平台：管理員預先建立公司與隊伍，並以拖曳把公司放到隊伍底下（一隊有多家公司 = 聯隊；一家公司可加入多隊）；各隊窗口在前台「選隊伍 → 設定信箱密碼 → 輸入邀請碼」註冊後，填寫隊員（含身分證等個資），並為 4 項趣味競賽（同心鼓顛球、四關障礙接力、嗨ROX競賽、毛毛蟲大隊接力）＋ 1 項健力比賽（每隊 10 人、至少 4 女）安排選手。
 技術：Vite + React 19 + TypeScript（前端，部署 GitHub Pages）＋ Supabase（Postgres / Auth / RLS）。
 
 ## 常用指令
@@ -35,7 +35,7 @@ npm run build                                # typecheck + vite build → dist/
 ### 資料模型與可見範圍（RLS）
 `organizations`（公司）⇄ `team_orgs` ⇄ `teams` → `members` → `event_entries`；個資另存 `member_private`。
 登入以「隊伍」為單位：`team_invites`（隊伍 × 公司各一組邀請碼）、`team_contacts`（帳號 ⇄ 隊伍，多對多，記錄以哪家公司身分加入）。
-- **隊伍與公司只由管理員建立**（`create_team` 限管理員，可不指定公司 = 未分配）；後台「隊伍配置」以拖曳呼叫 `set_team_orgs`。`team_orgs` 有多家公司即為聯隊；新增 `team_orgs` 時 trigger 自動產生該組邀請碼，移除時邀請碼與窗口綁定一併刪除（仍有隊員則拒絕）。刪除公司不會刪除隊伍。
+- **隊伍與公司只由管理員建立**（`create_team` 限管理員，可不指定公司 = 未分配）；後台「隊伍配置」（`src/pages/admin/TeamSetup.tsx`）把公司拖到隊伍卡上，以 `set_team_orgs` 存檔。`team_orgs` 有多家公司即為聯隊；新增 `team_orgs` 時 trigger 自動產生該組邀請碼，移除時邀請碼與窗口綁定一併刪除（仍有隊員則拒絕）。刪除公司不會刪除隊伍。
 - **窗口綁定**：`bind_team_contact`（內部函式）檢查邀請碼與所選隊伍相符、`teams.contact_limit` 未滿（advisory lock 防並行超額）。註冊時前端把 `team_id`、`invite_code` 放進 signUp 的 user metadata，由 `handle_new_user` trigger 一併綁定，失敗則整筆註冊失敗（不會留下無隊伍帳號，也不受 Confirm email 影響）；已登入帳號用 `join_team` 加入其他隊伍。
 - `members`（姓名、性別、所屬公司 `org_id`）：同隊窗口都看得到，用於安排項目選手；但只能新增 / 修改 / 刪除**自己以該公司身分加入（`is_team_org_contact`）**的隊員。`(team_id, org_id)` 有複合外鍵指向 `team_orgs`。
 - `member_private`（身分證 / 居留證、生日、手機、尺寸、用餐、特殊需求）：**只有「該隊 × 該公司」的窗口與管理員**看得到；前端 `Member.private === null` 代表無權檢視或已被清除。`national_id` 全活動唯一。
