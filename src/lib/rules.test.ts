@@ -85,6 +85,16 @@ describe('evaluateTeam', () => {
   it('人數不足下限時為未完成', () => {
     const s = evaluateTeam(settings, [], [member('a', 'M')], []);
     expect(s.level).toBe('incomplete');
+    expect(s.sizeIssues).toHaveLength(1);
+  });
+
+  it('健力比賽以公司為單位報名，不列入隊伍檢核', () => {
+    const pl: SportEvent = { ...relay, id: 'pl', name: '健力比賽', category: 'powerlifting', sort_order: 0 };
+    const members = [member('a', 'M'), member('b', 'F'), member('c', 'F'), member('d', 'M')];
+    const entries = ['a', 'b', 'c'].map((id) => entry('fun1', id));
+    const s = evaluateTeam(settings, [pl, relay], members, entries);
+    expect(s.events.map((e) => e.event.id)).toEqual(['fun1']);
+    expect(s.level).toBe('complete');
   });
 });
 

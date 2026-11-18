@@ -5,7 +5,7 @@ import {
   entriesOfMembers,
   evaluateTeam,
   isMergedTeam,
-  sortEvents,
+  teamEvents,
   teamSizeLabel,
   type StatusLevel,
 } from '../../lib/rules';
@@ -16,7 +16,8 @@ export default function Overview({ data }: { data: AdminData }) {
   const { settings, events, orgs, teams, members, entries } = data;
   const [search, setSearch] = useState('');
   const [level, setLevel] = useState<'all' | StatusLevel>('all');
-  const sortedEvents = sortEvents(events);
+  // 健力比賽改以公司為單位報名（尚未開放），總覽只列隊伍報名項目
+  const sortedEvents = teamEvents(events);
   const target = settings.total_team_target;
 
   const rows = useMemo(() => {

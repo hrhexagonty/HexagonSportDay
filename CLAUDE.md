@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 專案概要
 
-大型運動會（約 24 隊、900 人）報名平台：管理員預先建立公司與隊伍，並以拖曳把公司放到隊伍底下（一隊有多家公司 = 聯隊；一家公司可加入多隊）；各隊窗口在前台「選隊伍 → 設定信箱密碼 → 輸入邀請碼」註冊後，填寫隊員（含身分證等個資），並為 4 項趣味競賽（同心鼓顛球、四關障礙接力、嗨ROX競賽、毛毛蟲大隊接力）＋ 1 項健力比賽（每隊 10 人、至少 4 女）安排選手。
+大型運動會（約 24 隊、900 人）報名平台：管理員預先建立公司與隊伍，並以拖曳把公司放到隊伍底下（一隊有多家公司 = 聯隊；一家公司可加入多隊）；各隊窗口在前台「輸入邀請碼 → 確認隊伍 → 設定信箱密碼」註冊後，填寫隊員（含身分證等個資），並以拖曳人偶為 4 項趣味競賽（同心鼓顛球、四關障礙接力、嗨ROX競賽、毛毛蟲大隊接力）安排選手。健力比賽改以公司為單位報名，尚未實作。
 技術：Vite + React 19 + TypeScript（前端，部署 GitHub Pages）＋ Supabase（Postgres / Auth / RLS）。
 
 ## 常用指令
@@ -42,7 +42,7 @@ npm run build                                # typecheck + vite build → dist/
 - `organizations`、`team_invites`、他人的 `team_contacts` 只有管理員讀得到；窗口取公司名稱用 `org_names()`，取自己的隊伍用 `my_teams()`；未登入的註冊頁只能用 `lookup_team_invite(邀請碼)` 查出對應隊伍與公司，前台不公開隊伍清單。
 - 窗口可改隊長資料，隊名與 `contact_limit` 只有管理員能改（`teams_before_update` trigger）；刪除隊伍限管理員。
 - `event_entries` 不存 team_id，隊伍經由 member 推得；聯隊內任一公司都可為全隊安排選手。
-- `events` 為資料驅動，程式不應寫死特定項目；`category` 只影響標示（健力已不需體重）。
+- `events` 為資料驅動，程式不應寫死特定項目；`category` 只影響標示，唯一例外是 `rules.ts` 的 `teamEvents()`：`powerlifting` 改以公司為單位報名（尚未實作），不列入隊伍頁的報名、檢核與後台總覽。
 - 管理員帳號：網站註冊必須有隊伍邀請碼，因此管理員請在 Supabase Dashboard → Authentication → Add user 建立，再把 `profiles.role` 改為 `super_admin`。
 
 ### 規則重複存在於前後端，修改時必須同步
@@ -79,6 +79,7 @@ npm run build                                # typecheck + vite build → dist/
 - **元件**：`StatusTag`（等寬字 + 脈動萊姆點）、`Eyebrow`（標題上方等寬小標，例如 `ADMIN CONSOLE`）、`BrandMark`，定義在 `src/components/ui.tsx`；內頁標題一律「Eyebrow + h1」。
 - **質感**：外殼背景的 60px 格線、光暈球（blur 120px）、15% 雜訊由 `Layout.tsx` 的 `ShellEffects` 提供；首頁才有大型頁尾（HEXAGON 浮水印 + CTA），內頁為精簡頁尾。
 - **中文排版**：斜體漸層（`.hero-title-accent`）只用在英文字；-0.06em 緊字距只用在大型展示字（hero、大數字），一般中文標題用 -0.03em。
+- 隊伍頁「項目報名」（`src/pages/team/EventsPanel.tsx`）：中央為隊員人偶（`--male` 藍 / `--female` 粉），項目框依排序放在上、左、右、下；拖曳到項目框 = 報名、項目框之間 = 換項目、拖回中央或按 × = 取消。觸控裝置以「點選人偶 → 點項目框」代替拖曳。操作先反映在畫面，全部完成後才 reload。下方「報名檢核」以男女分色進度條顯示隊伍人數與各項目人數。
 - 首頁為 Hero（12 欄分割）→ 比賽項目（4 欄 Bento，資料驅動：趣味競賽各一張卡，健力為整列萊姆強調卡）→ 淺灰對比區（報名流程 + 個資說明）。窄於 1100px 時 Hero 改單欄（12 欄 × 大間距會撐出最小寬度）。
 - Hero 標題（活動名稱、Sport Day 年份）一律單行不換行，寬度不足時由 `Home.tsx` 的 `FitLine` 自動縮小字級。
 - 頁首品牌只有萊姆方塊 + 「SPORT DAY」（不放 HEXAGON 字樣與字首）；首次註冊與加入隊伍一律先輸入邀請碼（`src/components/InviteCode.tsx`），由邀請碼帶出隊伍，不讓使用者自選隊伍。

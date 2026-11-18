@@ -44,6 +44,14 @@ export function sortEvents(events: SportEvent[]): SportEvent[] {
   return [...events].sort((a, b) => a.sort_order - b.sort_order);
 }
 
+/**
+ * 以隊伍為單位安排選手的項目（依排序）。
+ * 健力比賽改以公司為單位報名（尚未開放），不列入隊伍頁的報名與檢核。
+ */
+export function teamEvents(events: SportEvent[]): SportEvent[] {
+  return sortEvents(events).filter((e) => e.category !== 'powerlifting');
+}
+
 export function teamSizeLabel(event: Pick<SportEvent, 'min_per_team' | 'max_per_team'>): string {
   const { min_per_team: min, max_per_team: max } = event;
   if (min === max) return `每隊 ${min} 人`;
@@ -84,6 +92,10 @@ export function evaluateEvent(
 export interface TeamStatus {
   memberCount: number;
   femaleCount: number;
+  /** 隊伍人數的問題 */
+  sizeIssues: Issue[];
+  /** 個別隊員報名項目數的問題 */
+  loadIssues: Issue[];
   /** 隊伍層級 + 各項目的所有問題（項目問題會加上【項目名】前綴） */
   issues: Issue[];
   events: EventStatus[];
@@ -97,13 +109,14 @@ export function evaluateTeam(
   teamEntries: EventEntry[],
 ): TeamStatus {
   const membersById = new Map(teamMembers.map((m) => [m.id, m]));
-  const issues: Issue[] = [];
+  const sizeIssues: Issue[] = [];
+  const loadIssues: Issue[] = [];
   const n = teamMembers.length;
 
   if (n > settings.team_max_size) {
-    issues.push({ level: 'error', message: `隊伍人數 ${n} 人，超過上限 ${settings.team_max_size} 人` });
+    sizeIssues.push({ level: 'error', message: `隊伍人數 ${n} 人，超過上限 ${settings.team_max_size} 人` });
   } else if (n < settings.team_min_size) {
-    issues.push({ level: 'warning', message: `隊伍人數 ${n} 人，未達下限 ${settings.team_min_size} 人` });
+    sizeIssues.push({ level: 'warning', message: `隊伍人數 ${n} 人，未達下限 ${settings.team_min_size} 人` });
   }
 
   const perMember = new Map<string, number>();
@@ -111,14 +124,15 @@ export function evaluateTeam(
   for (const [memberId, count] of perMember) {
     if (count > settings.max_events_per_member) {
       const name = membersById.get(memberId)?.name ?? '未知隊員';
-      issues.push({
+      loadIssues.push({
         level: 'error',
         message: `${name} 報名 ${count} 項，超過每人上限 ${settings.max_events_per_member} 項`,
       });
     }
   }
 
-  const eventStatuses = sortEvents(events).map((ev) => evaluateEvent(ev, teamEntries, membersById));
+  const issues: Issue[] = [...sizeIssues, ...loadIssues];
+  const eventStatuses = teamEvents(events).map((ev) => evaluateEvent(ev, teamEntries, membersById));
   for (const s of eventStatuses) {
     for (const i of s.issues) issues.push({ ...i, message: `【${s.event.name}】${i.message}` });
   }
@@ -126,6 +140,8 @@ export function evaluateTeam(
   return {
     memberCount: n,
     femaleCount: teamMembers.filter((m) => m.gender === 'F').length,
+    sizeIssues,
+    loadIssues,
     issues,
     events: eventStatuses,
     level: levelOf(issues),

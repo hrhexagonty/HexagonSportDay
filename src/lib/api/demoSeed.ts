@@ -30,7 +30,7 @@ export interface DemoContact {
 }
 
 export interface DemoDb {
-  version: 4;
+  version: 5;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
@@ -179,7 +179,9 @@ export function createSeed(): DemoDb {
     }
 
     if (fill === 'none') return;
-    const events = fill === 'full' ? DEMO_EVENTS : DEMO_EVENTS.slice(0, 2);
+    // 健力比賽改以公司為單位報名（尚未開放），展示資料只安排隊伍報名項目
+    const teamEvs = DEMO_EVENTS.filter((e) => e.category !== 'powerlifting');
+    const events = fill === 'full' ? teamEvs : teamEvs.slice(0, 2);
     const ratio = fill === 'full' ? 1 : 0.6;
     const load = new Map<string, number>();
 
@@ -201,7 +203,7 @@ export function createSeed(): DemoDb {
   });
 
   return {
-    version: 4,
+    version: 5,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',

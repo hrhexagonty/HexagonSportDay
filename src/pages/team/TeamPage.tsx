@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/Toast';
-import { Badge, EmptyState, ErrorBox, Eyebrow, Field, IssueList, Loading, StatusBadge, Tabs } from '../../components/ui';
+import { Badge, EmptyState, ErrorBox, Eyebrow, Field, Loading, StatusBadge, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';
 import { blankToNull } from '../../lib/format';
 import { evaluateTeam, isMergedTeam, registrationOpen } from '../../lib/rules';
@@ -150,7 +150,6 @@ export default function TeamPage() {
     isAdmin,
     reload: q.reload,
   };
-  const { status } = data;
 
   return (
     <div className="page">
@@ -160,17 +159,6 @@ export default function TeamPage() {
       <TeamInfo data={data} />
 
       {!data.editable && <div className="notice notice-err">報名已截止，資料僅供檢視。</div>}
-
-      <section className="card check-card">
-        <div className="check-head">
-          <h2>報名檢核</h2>
-          <span className="muted small">
-            隊員 {status.memberCount} 人（女 {status.femaleCount}）· 規定 {settings.team_min_size}–{settings.team_max_size} 人 ·
-            每人最多 {settings.max_events_per_member} 項
-          </span>
-        </div>
-        <IssueList issues={status.issues} empty="所有規則皆已符合，報名完成！" />
-      </section>
 
       <Tabs
         value={tab}
