@@ -48,3 +48,13 @@ export function blankToNull(v: string): string | null {
   const t = v.trim();
   return t ? t : null;
 }
+
+/** 匯出檔名用的日期，例如 20261118 */
+export function dateStamp(d: Date = new Date()): string {
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** 匯出檔名前綴：活動名稱去除不能當檔名的字元 */
+export function filePrefix(title: string): string {
+  return title.replace(/[\\/:*?"<>|\s]+/g, '_');
+}

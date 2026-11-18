@@ -1,14 +1,10 @@
 import { useToast } from '../../components/Toast';
 import { api } from '../../lib/api';
 import { downloadCsv, type Cell } from '../../lib/csv';
+import { dateStamp, filePrefix } from '../../lib/format';
 import { sortEvents } from '../../lib/rules';
 import { CATEGORY_LABEL, DIETS, DIET_LABEL, GENDER_LABEL, SHIRT_SIZES, type Member } from '../../lib/types';
 import type { AdminData } from './types';
-
-function today() {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-}
 
 /** 產生各種匯出報表（含完整證號，僅管理員可下載） */
 function buildReports(data: AdminData) {
@@ -118,7 +114,7 @@ function buildReports(data: AdminData) {
 export default function Exports({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
   const toast = useToast();
   const reports = buildReports(data);
-  const prefix = data.settings.event_title.replace(/[\\/:*?"<>|\s]+/g, '_');
+  const prefix = filePrefix(data.settings.event_title);
   const privateCount = data.members.filter((m) => m.private).length;
 
   async function purge() {
@@ -152,7 +148,7 @@ export default function Exports({ data, onChanged }: { data: AdminData; onChange
             <p className="muted small">{r.desc}</p>
             <div className="export-foot">
               <span className="muted">{r.count}</span>
-              <button className="btn btn-primary btn-sm" onClick={() => downloadCsv(`${prefix}_${r.title}_${today()}.csv`, r.build())}>
+              <button className="btn btn-primary btn-sm" onClick={() => downloadCsv(`${prefix}_${r.title}_${dateStamp()}.csv`, r.build())}>
                 下載 CSV
               </button>
             </div>

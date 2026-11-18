@@ -5,9 +5,7 @@ import {
   evaluateEvent,
   evaluateTeam,
   isMergedTeam,
-  plannedTeamCount,
   registrationOpen,
-  soloTeamCount,
 } from './rules';
 import type { EventEntry, Gender, Member, Settings, SportEvent } from './types';
 
@@ -118,15 +116,10 @@ describe('checkAddMembers', () => {
   });
 });
 
-describe('聯隊與額度', () => {
-  const teams = [{ org_ids: ['A'] }, { org_ids: ['A'] }, { org_ids: ['B'] }, { org_ids: ['A', 'C', 'D'] }];
-
-  it('自組隊伍數不含聯隊', () => {
-    expect(soloTeamCount(teams, 'A')).toBe(2);
-    expect(soloTeamCount(teams, 'C')).toBe(0);
-  });
-  it('規劃隊數 = 自組額度合計 + 聯隊數', () => {
-    expect(isMergedTeam(teams[3])).toBe(true);
-    expect(plannedTeamCount(23, teams)).toBe(24);
+describe('聯隊', () => {
+  it('參與公司超過 1 家即為聯隊', () => {
+    expect(isMergedTeam({ org_ids: ['A'] })).toBe(false);
+    expect(isMergedTeam({ org_ids: [] })).toBe(false);
+    expect(isMergedTeam({ org_ids: ['A', 'C', 'D'] })).toBe(true);
   });
 });

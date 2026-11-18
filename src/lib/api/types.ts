@@ -10,15 +10,33 @@ import type {
   Settings,
   SportEvent,
   Team,
+  TeamContact,
   TeamInput,
+  TeamInvite,
+  TeamOption,
+  TeamPatch,
 } from '../types';
+
+/** 帳號綁定的隊伍；orgId = 以哪家公司的邀請碼加入 */
+export interface SessionTeam {
+  teamId: string;
+  teamName: string;
+  orgId: string;
+  orgName: string;
+}
 
 export interface SessionInfo {
   userId: string;
   email: string;
   role: Role;
-  orgId: string | null;
-  orgName: string | null;
+  /** 綁定的隊伍（管理員為空陣列） */
+  teams: SessionTeam[];
+}
+
+/** 註冊時一併綁定的隊伍 */
+export interface JoinInput {
+  teamId: string;
+  inviteCode: string;
 }
 
 /**
@@ -27,9 +45,10 @@ export interface SessionInfo {
  * - demo.ts：展示模式，資料存在 localStorage，並模擬 RLS 與 DB trigger 的限制
  *
  * 可見範圍（兩種實作需一致）：
- * - 隊伍：管理員看全部；公司窗口看自己公司有參與的隊伍（含聯隊）
- * - 隊員公開資料（姓名、性別、所屬公司）：同隊各公司都看得到
- * - 隊員個資 Member.private：只有隊員所屬公司與管理員看得到，其餘為 null
+ * - 隊伍：管理員看全部；窗口看自己綁定的隊伍
+ * - 隊員公開資料（姓名、性別、所屬公司）：同隊窗口都看得到
+ * - 隊員個資 Member.private：只有「該隊 × 該公司」的窗口與管理員看得到，其餘為 null
+ * - 公司完整資料、邀請碼、窗口名單：只有管理員
  */
 export interface DataApi {
   readonly mode: 'supabase' | 'demo';
@@ -38,10 +57,15 @@ export interface DataApi {
   getSession(): Promise<SessionInfo | null>;
   onAuthChange(cb: () => void): () => void;
   signIn(email: string, password: string): Promise<void>;
-  signUp(email: string, password: string): Promise<{ needsEmailConfirm: boolean }>;
+  /** 註冊並以邀請碼綁定隊伍（綁定失敗則不會建立帳號） */
+  signUp(email: string, password: string, join: JoinInput): Promise<{ needsEmailConfirm: boolean }>;
   signOut(): Promise<void>;
-  /** 以邀請碼綁定公司，回傳公司名稱 */
-  joinOrg(inviteCode: string): Promise<string>;
+  /** 註冊用的隊伍清單（未登入可呼叫） */
+  listTeamOptions(): Promise<TeamOption[]>;
+  /** 註冊前檢查邀請碼是否與隊伍相符且尚有名額，回傳公司名稱（未登入可呼叫） */
+  checkTeamInvite(teamId: string, inviteCode: string): Promise<string>;
+  /** 已登入帳號以邀請碼加入（其他）隊伍，回傳隊名 */
+  joinTeam(teamId: string, inviteCode: string): Promise<string>;
 
   // ---- 活動設定與項目 ----
   getSettings(): Promise<Settings>;
@@ -49,24 +73,33 @@ export interface DataApi {
   listEvents(): Promise<SportEvent[]>;
   updateEvent(id: string, patch: Partial<EventInput>): Promise<void>;
 
-  // ---- 公司 ----
-  /** 完整公司資料（含邀請碼）：窗口只拿得到自己公司，管理員拿得到全部 */
+  // ---- 公司（管理員） ----
   listOrganizations(): Promise<Organization[]>;
-  /** 所有公司名稱（顯示聯隊隊友所屬公司用） */
+  /** 所有公司名稱（登入者皆可取得，顯示聯隊隊友所屬公司用） */
   listOrgNames(): Promise<OrgName[]>;
   createOrganization(input: OrgInput): Promise<void>;
   updateOrganization(id: string, patch: Partial<OrgInput>): Promise<void>;
+  /** 刪除公司：該公司隊員、邀請碼與窗口綁定一併刪除，隊伍保留 */
   deleteOrganization(id: string): Promise<void>;
 
   // ---- 隊伍 ----
   listTeams(): Promise<Team[]>;
   getTeam(id: string): Promise<Team | null>;
-  /** 窗口只能傳入自己公司（受額度限制）；管理員可傳多家公司建立聯隊 */
+  /** 建立隊伍（僅管理員；orgIds 可為空 = 未分配） */
   createTeam(input: TeamInput, orgIds: string[]): Promise<Team>;
-  updateTeam(id: string, patch: Partial<TeamInput>): Promise<void>;
-  /** 調整參與公司（僅管理員） */
+  /** 窗口只能改隊長資料；隊名與窗口人數僅管理員 */
+  updateTeam(id: string, patch: TeamPatch): Promise<void>;
+  /** 調整參與公司（僅管理員）；移除的公司其邀請碼與窗口綁定一併刪除 */
   setTeamOrgs(id: string, orgIds: string[]): Promise<void>;
+  /** 刪除隊伍（僅管理員） */
   deleteTeam(id: string): Promise<void>;
+
+  // ---- 邀請碼與窗口（管理員） ----
+  listTeamInvites(): Promise<TeamInvite[]>;
+  setTeamInviteCode(teamId: string, orgId: string, inviteCode: string): Promise<void>;
+  listTeamContacts(): Promise<TeamContact[]>;
+  /** 解除窗口與隊伍的綁定（釋出名額） */
+  removeTeamContact(userId: string, teamId: string): Promise<void>;
 
   // ---- 隊員 ----
   listMembers(filter?: { teamId?: string }): Promise<Member[]>;

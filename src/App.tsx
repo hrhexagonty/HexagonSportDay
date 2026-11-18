@@ -3,7 +3,7 @@ import { RequireAuth } from './auth/RequireAuth';
 import Layout from './components/Layout';
 import AdminPage from './pages/admin/AdminPage';
 import Home from './pages/Home';
-import JoinOrg from './pages/JoinOrg';
+import JoinTeam from './pages/JoinTeam';
 import Login from './pages/Login';
 import OrgDashboard from './pages/OrgDashboard';
 import TeamPage from './pages/team/TeamPage';
@@ -18,7 +18,7 @@ export default function App() {
           path="/join"
           element={
             <RequireAuth need="any">
-              <JoinOrg />
+              <JoinTeam />
             </RequireAuth>
           }
         />

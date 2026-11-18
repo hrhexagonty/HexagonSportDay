@@ -11,6 +11,7 @@ import {
   type Settings,
   type SportEvent,
   type Team,
+  type TeamInvite,
 } from '../types';
 
 export interface DemoUser {
@@ -18,14 +19,23 @@ export interface DemoUser {
   email: string;
   password: string;
   role: Role;
-  org_id: string | null;
+}
+
+/** 窗口與隊伍的綁定（對應 team_contacts 表） */
+export interface DemoContact {
+  user_id: string;
+  team_id: string;
+  org_id: string;
+  created_at: string;
 }
 
 export interface DemoDb {
-  version: 3;
+  version: 4;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
+  invites: TeamInvite[];
+  contacts: DemoContact[];
   /** 內部保存完整個資；回傳給頁面前依權限遮蔽 */
   members: Member[];
   events: SportEvent[];
@@ -44,24 +54,24 @@ export const DEMO_EVENTS: SportEvent[] = [
 ];
 
 export const DEMO_ACCOUNTS = {
-  org: { email: 'org@demo.local', password: 'demo', label: '公司窗口（六角科技）' },
-  merged: { email: 'energy@demo.local', password: 'demo', label: '公司窗口（六角能源，參與聯隊）' },
+  org: { email: 'org@demo.local', password: 'demo', label: '隊伍窗口（六角科技，管理 2 隊）' },
+  merged: { email: 'energy@demo.local', password: 'demo', label: '隊伍窗口（六角能源，參與聯隊）' },
   admin: { email: 'admin@demo.local', password: 'demo', label: '活動管理員' },
 } as const;
 
-// [公司名稱, 自組隊伍額度, 邀請碼, 聯絡人]；額度合計 23 + 1 支聯隊 = 24 隊
-const ORGS: [string, number, string, string][] = [
-  ['六角科技', 6, 'TECH2026', '林雅婷'],
-  ['六角建設', 5, 'BUILD026', '陳建宏'],
-  ['六角物流', 4, 'LOGI2026', '黃志明'],
-  ['六角餐飲', 4, 'FOOD2026', '張怡君'],
-  ['六角金融', 4, 'FINA2026', '李冠宇'],
-  ['六角醫材', 0, 'MEDI2026', '王佳穎'],
-  ['六角能源', 0, 'ENGY2026', '吳家豪'],
-  ['六角文創', 0, 'ARTS2026', '劉詩涵'],
+// [公司名稱, 邀請碼前綴, 聯絡人]；邀請碼 = 前綴 + 隊伍編號，例如 TECH01
+const ORGS: [string, string, string][] = [
+  ['六角科技', 'TECH', '林雅婷'],
+  ['六角建設', 'BUIL', '陳建宏'],
+  ['六角物流', 'LOGI', '黃志明'],
+  ['六角餐飲', 'FOOD', '張怡君'],
+  ['六角金融', 'FINA', '李冠宇'],
+  ['六角醫材', 'MEDI', '王佳穎'],
+  ['六角能源', 'ENGY', '吳家豪'],
+  ['六角文創', 'ARTS', '劉詩涵'],
 ];
 
-// [參與公司索引, 隊名, 各公司隊員數, 報名完成度]
+// [參與公司索引, 隊名, 各公司隊員數, 報名完成度]；參與公司為空 = 尚未分配
 const TEAMS: [number[], string, number[], 'full' | 'partial' | 'none'][] = [
   [[0], '六角科技 閃電隊', [36], 'full'],
   [[0], '六角科技 火箭隊', [24], 'partial'],
@@ -72,6 +82,7 @@ const TEAMS: [number[], string, number[], 'full' | 'partial' | 'none'][] = [
   [[3], '六角餐飲 美味隊', [34], 'full'],
   [[4], '六角金融 金牛隊', [20], 'none'],
   [[5, 6, 7], '醫材能源文創 聯隊', [12, 10, 11], 'full'],
+  [[], '飛鷹隊', [], 'none'],
 ];
 
 const SURNAMES = '陳林黃張李王吳劉蔡楊許鄭謝郭洪曾邱廖賴周';
@@ -113,16 +124,15 @@ export function createSeed(): DemoDb {
     return r < 0.85 ? 'meat' : r < 0.95 ? 'ovo_lacto' : 'vegan';
   }
 
-  const organizations: Organization[] = ORGS.map(([name, quota, code, contact], i) => ({
+  const organizations: Organization[] = ORGS.map(([name, , contact], i) => ({
     id: `org-${i + 1}`,
     name,
-    team_quota: quota,
-    invite_code: code,
     contact_name: contact,
     contact_phone: `02-2700-${String(1000 + i * 37).padStart(4, '0')}`,
   }));
 
   const teams: Team[] = [];
+  const invites: TeamInvite[] = [];
   const members: Member[] = [];
   const entries: EventEntry[] = [];
 
@@ -132,9 +142,13 @@ export function createSeed(): DemoDb {
       name,
       captain_name: null,
       captain_phone: null,
+      contact_limit: 2,
       org_ids: orgIdxs.map((i) => organizations[i].id),
     };
     teams.push(team);
+    for (const i of orgIdxs) {
+      invites.push({ team_id: team.id, org_id: organizations[i].id, invite_code: `${ORGS[i][1]}${String(ti + 1).padStart(2, '0')}` });
+    }
 
     const teamMembers: Member[] = [];
     orgIdxs.forEach((orgIdx, k) => {
@@ -187,7 +201,7 @@ export function createSeed(): DemoDb {
   });
 
   return {
-    version: 3,
+    version: 4,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',
@@ -201,13 +215,19 @@ export function createSeed(): DemoDb {
     },
     organizations,
     teams,
+    invites,
+    contacts: [
+      { user_id: 'u-org', team_id: 'team-1', org_id: 'org-1', created_at: '2026-11-18T01:00:00.000Z' },
+      { user_id: 'u-org', team_id: 'team-2', org_id: 'org-1', created_at: '2026-11-18T01:00:00.000Z' },
+      { user_id: 'u-energy', team_id: 'team-9', org_id: 'org-7', created_at: '2026-11-18T02:00:00.000Z' },
+    ],
     members,
     events: DEMO_EVENTS.map((e) => ({ ...e })),
     entries,
     users: [
-      { id: 'u-admin', email: DEMO_ACCOUNTS.admin.email, password: 'demo', role: 'super_admin', org_id: null },
-      { id: 'u-org', email: DEMO_ACCOUNTS.org.email, password: 'demo', role: 'org_admin', org_id: 'org-1' },
-      { id: 'u-energy', email: DEMO_ACCOUNTS.merged.email, password: 'demo', role: 'org_admin', org_id: 'org-7' },
+      { id: 'u-admin', email: DEMO_ACCOUNTS.admin.email, password: 'demo', role: 'super_admin' },
+      { id: 'u-org', email: DEMO_ACCOUNTS.org.email, password: 'demo', role: 'org_admin' },
+      { id: 'u-energy', email: DEMO_ACCOUNTS.merged.email, password: 'demo', role: 'org_admin' },
     ],
     sessionUserId: null,
   };

@@ -90,7 +90,17 @@ export default function Layout({ children }: { children: ReactNode }) {
     window.scrollTo(0, 0);
   }, [pathname]);
 
-  const status = session ? (isAdmin ? 'Admin' : (session.orgName ?? '未綁定公司')) : api.mode === 'demo' ? 'Demo' : 'Online';
+  // 窗口顯示所代表的公司（可能擔任多家公司、多隊的窗口）
+  const myOrgs = [...new Set(session?.teams.map((t) => t.orgName) ?? [])];
+  const status = session
+    ? isAdmin
+      ? 'Admin'
+      : myOrgs.length > 0
+        ? myOrgs.join('、')
+        : '未綁定隊伍'
+    : api.mode === 'demo'
+      ? 'Demo'
+      : 'Online';
 
   return (
     <div className="viewport">
@@ -109,7 +119,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/" end>
               活動資訊
             </NavLink>
-            {session?.orgId && !isAdmin && (
+            {session && !isAdmin && session.teams.length > 0 && (
               <NavLink to="/org" className={activeIf(onTeamPage)}>
                 我的隊伍
               </NavLink>

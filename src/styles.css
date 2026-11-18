@@ -2248,3 +2248,305 @@ textarea {
     bottom: 16px;
   }
 }
+
+/* =====================================================================
+   隊伍登入：註冊步驟、隊伍配置（拖曳）、窗口與邀請碼
+   ===================================================================== */
+.reg-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1.1rem 1.2rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+}
+.reg-step-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.reg-step-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: -0.03em;
+}
+.reg-step-no {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #000;
+  background: var(--lime);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+}
+
+.setup-inputs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.setup-step textarea {
+  resize: vertical;
+  min-height: 6.5rem;
+}
+
+.dnd-board {
+  display: grid;
+  grid-template-columns: minmax(270px, 360px) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.team-pool {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.35rem;
+}
+.team-pool,
+.org-drop {
+  transition:
+    border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+.team-pool.is-over,
+.org-drop.is-over {
+  border-color: var(--lime);
+  box-shadow: var(--lime-glow);
+  background: var(--lime-08);
+}
+.team-pool-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.team-pool-head h3 {
+  margin: 0;
+}
+.team-pool-head .switch {
+  min-height: 0;
+}
+.team-pool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.team-pool-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.4rem;
+}
+.team-pool-list .team-chip {
+  min-width: 0;
+}
+.team-pool-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.team-pool-meta {
+  flex: none;
+}
+/* 改名 / 刪除：滑鼠移到該列才顯示（觸控裝置一律顯示） */
+.team-pool-actions {
+  margin-left: auto;
+  display: none;
+  flex: none;
+  gap: 0.2rem;
+}
+.team-pool-list li:hover .team-pool-actions,
+.team-pool-list li:focus-within .team-pool-actions {
+  display: flex;
+}
+@media (hover: none) {
+  .team-pool-actions {
+    display: flex;
+  }
+}
+
+.team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  padding: 0.32rem 0.45rem 0.32rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--glass-2);
+  font-size: 0.86rem;
+  cursor: grab;
+  user-select: none;
+  transition:
+    border-color 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+.team-chip:hover {
+  border-color: var(--lime-40);
+  background: var(--glass-3);
+}
+.team-chip:active {
+  cursor: grabbing;
+}
+.team-chip-grip {
+  color: var(--text-3);
+  font-size: 0.8rem;
+}
+.team-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-chip-free {
+  border-style: dashed;
+  border-color: var(--lime-40);
+}
+.team-chip-merged {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+.team-chip-x {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--glass-3);
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.team-chip-x:hover {
+  background: var(--err-bg);
+  color: var(--err);
+}
+
+.org-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.org-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1.25rem;
+}
+.org-drop-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.org-drop-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.03em;
+}
+.org-drop-title {
+  min-width: 0;
+}
+.org-drop-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-drop-head .actions {
+  flex-wrap: nowrap;
+}
+.org-drop-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.45rem;
+  min-height: 3.25rem;
+  padding: 0.6rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+}
+.org-drop-empty {
+  margin: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+.select-sm {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
+.toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.input-num {
+  width: 4.5rem;
+  padding: 0.35rem 0.5rem;
+  text-align: center;
+}
+.invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.invite-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.invite-org {
+  min-width: 5.5em;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.limit-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+}
+.contact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.contact-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 900px) {
+  .setup-inputs,
+  .dnd-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .team-pool {
+    position: static;
+    max-height: none;
+  }
+}

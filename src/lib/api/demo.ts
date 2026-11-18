@@ -1,19 +1,20 @@
 // 展示模式：資料存在 localStorage，並在記憶體內模擬 Supabase 的 RLS 與 DB trigger 限制
 // 讓尚未建立 Supabase 專案時也能完整操作雛形；可見範圍規則見 ./types.ts 的 DataApi 說明
+import { INVITE_CODE_PATTERN, normalizeInviteCode, randomInviteCode } from '../inviteCode';
 import { cleanMemberInput, validateMemberInput } from '../member';
-import { checkAddEntry, checkAddMembers, checkWritable, entriesOfMembers, soloTeamCount } from '../rules';
+import { checkAddEntry, checkAddMembers, checkWritable, entriesOfMembers } from '../rules';
 import type { Member, MemberInput, Team } from '../types';
 import { createSeed, type DemoDb } from './demoSeed';
-import type { DataApi } from './types';
+import type { DataApi, JoinInput } from './types';
 
-const STORAGE_KEY = 'hexagon-sportday-demo-v3';
+const STORAGE_KEY = 'hexagon-sportday-demo-v4';
 
 function load(): DemoDb {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb;
-      if (parsed.version === 3) return parsed;
+      if (parsed.version === 4) return parsed;
     }
   } catch {
     // localStorage 不可用或資料損毀時改用初始資料
@@ -50,7 +51,7 @@ export function createDemoApi(): DataApi {
   // ---- 模擬 RLS ----
   const currentUser = () => db.users.find((u) => u.id === db.sessionUserId) ?? null;
   const isAdmin = () => currentUser()?.role === 'super_admin';
-  const myOrg = () => currentUser()?.org_id ?? null;
+  const myContacts = () => db.contacts.filter((c) => c.user_id === db.sessionUserId);
   const requireUser = () => currentUser() ?? fail('請先登入');
   const requireAdmin = () => {
     if (!isAdmin()) fail('權限不足');
@@ -59,11 +60,14 @@ export function createDemoApi(): DataApi {
     const msg = checkWritable(db.settings, isAdmin());
     if (msg) fail(msg);
   };
-  const canAccessTeam = (t: Team) => isAdmin() || (!!myOrg() && t.org_ids.includes(myOrg()!));
+  /** 管理員，或該隊窗口 */
+  const canAccessTeam = (t: Team) => isAdmin() || myContacts().some((c) => c.team_id === t.id);
+  /** 該隊 × 該公司的窗口：可編輯該公司隊員、檢視其個資 */
+  const isTeamOrgContact = (teamId: string, orgId: string) =>
+    myContacts().some((c) => c.team_id === teamId && c.org_id === orgId);
   const teamOf = (m: Member) => db.teams.find((t) => t.id === m.team_id);
-  const canSeeMember = (m: Member) => isAdmin() || m.org_id === myOrg() || (!!teamOf(m) && canAccessTeam(teamOf(m)!));
-  /** 個資只有所屬公司與管理員看得到 */
-  const canSeePrivate = (m: Member) => isAdmin() || m.org_id === myOrg();
+  const canSeeMember = (m: Member) => !!teamOf(m) && canAccessTeam(teamOf(m)!);
+  const canSeePrivate = (m: Member) => isAdmin() || isTeamOrgContact(m.team_id, m.org_id);
   const view = (m: Member): Member => ({ ...copy(m), private: canSeePrivate(m) ? copy(m.private) : null });
 
   const getTeam = (id: string): Team => {
@@ -71,10 +75,10 @@ export function createDemoApi(): DataApi {
     if (!t || !canAccessTeam(t)) return fail('找不到隊伍或無權限');
     return t;
   };
-  /** 只能修改自己公司的隊員 */
+  /** 只能修改自己以該公司身分加入的隊員 */
   const getWritableMember = (id: string): Member => {
     const m = db.members.find((x) => x.id === id);
-    if (!m || !(isAdmin() || m.org_id === myOrg())) return fail('找不到隊員或無權限修改');
+    if (!m || !(isAdmin() || isTeamOrgContact(m.team_id, m.org_id))) return fail('找不到隊員或無權限修改');
     return m;
   };
 
@@ -90,14 +94,64 @@ export function createDemoApi(): DataApi {
 
   const splitInput = ({ name, gender, ...priv }: MemberInput) => ({ name, gender, private: priv });
 
+  // ---- 邀請碼與窗口綁定（模擬 team_invites / team_contacts 與 bind_team_contact） ----
+  const contactCount = (teamId: string) => db.contacts.filter((c) => c.team_id === teamId).length;
+
+  /** 檢查邀請碼與隊伍相符且尚有名額，回傳邀請碼對應的公司 id */
+  function checkInvite(teamId: string, code: string): string {
+    const inv = db.invites.find((i) => i.invite_code === normalizeInviteCode(code));
+    if (!inv || inv.team_id !== teamId) return fail('邀請碼錯誤，或與所選隊伍不符');
+    const team = db.teams.find((t) => t.id === teamId) ?? fail('找不到隊伍');
+    if (contactCount(teamId) >= team.contact_limit) fail(`此隊窗口名額已滿（${team.contact_limit} 人），請洽活動小組`);
+    return inv.org_id;
+  }
+
+  function bind(userId: string, { teamId, inviteCode }: JoinInput) {
+    const orgId = checkInvite(teamId, inviteCode);
+    if (db.contacts.some((c) => c.user_id === userId && c.team_id === teamId)) fail('此帳號已是該隊窗口');
+    db.contacts.push({ user_id: userId, team_id: teamId, org_id: orgId, created_at: new Date().toISOString() });
+  }
+
+  function newInviteCode(): string {
+    for (;;) {
+      const code = randomInviteCode();
+      if (!db.invites.some((i) => i.invite_code === code)) return code;
+    }
+  }
+
+  /** 模擬 set_team_orgs：新增的公司產生邀請碼；移除的公司刪除其邀請碼與窗口綁定 */
+  function applyTeamOrgs(team: Team, orgIds: string[]) {
+    team.org_ids = [...orgIds];
+    db.invites = db.invites.filter((i) => i.team_id !== team.id || orgIds.includes(i.org_id));
+    db.contacts = db.contacts.filter((c) => c.team_id !== team.id || orgIds.includes(c.org_id));
+    for (const orgId of orgIds) {
+      if (!db.invites.some((i) => i.team_id === team.id && i.org_id === orgId)) {
+        db.invites.push({ team_id: team.id, org_id: orgId, invite_code: newInviteCode() });
+      }
+    }
+  }
+
+  function removeMembers(predicate: (m: Member) => boolean) {
+    const gone = new Set(db.members.filter(predicate).map((m) => m.id));
+    db.entries = db.entries.filter((e) => !gone.has(e.member_id));
+    db.members = db.members.filter((m) => !gone.has(m.id));
+  }
+
   return {
     mode: 'demo',
 
     async getSession() {
       const u = currentUser();
       if (!u) return null;
-      const org = db.organizations.find((o) => o.id === u.org_id);
-      return { userId: u.id, email: u.email, role: u.role, orgId: u.org_id, orgName: org?.name ?? null };
+      const teams = myContacts()
+        .map((c) => ({
+          teamId: c.team_id,
+          teamName: db.teams.find((t) => t.id === c.team_id)?.name ?? '',
+          orgId: c.org_id,
+          orgName: db.organizations.find((o) => o.id === c.org_id)?.name ?? '',
+        }))
+        .sort((a, b) => a.teamName.localeCompare(b.teamName, 'zh-TW'));
+      return { userId: u.id, email: u.email, role: u.role, teams };
     },
 
     onAuthChange(cb) {
@@ -115,13 +169,15 @@ export function createDemoApi(): DataApi {
       notify();
     },
 
-    async signUp(email, password) {
+    async signUp(email, password, join) {
       const normalized = email.trim().toLowerCase();
       if (!/^\S+@\S+\.\S+$/.test(normalized)) fail('請輸入有效的 Email');
       if (password.length < 6) fail('密碼至少 6 個字元');
-      if (db.users.some((x) => x.email === normalized)) fail('此信箱已註冊，請直接登入');
+      if (db.users.some((x) => x.email === normalized)) fail('此信箱已註冊：請改用「登入」，登入後可在「我的隊伍」輸入邀請碼加入其他隊伍');
       const id = crypto.randomUUID();
-      db.users.push({ id, email: normalized, password, role: 'org_admin', org_id: null });
+      // 先綁定再建立帳號：綁定失敗時不會留下帳號（同 handle_new_user）
+      bind(id, join);
+      db.users.push({ id, email: normalized, password, role: 'org_admin' });
       db.sessionUserId = id;
       commit();
       notify();
@@ -134,14 +190,25 @@ export function createDemoApi(): DataApi {
       notify();
     },
 
-    async joinOrg(inviteCode) {
+    async listTeamOptions() {
+      return db.teams
+        .filter((t) => t.org_ids.length > 0)
+        .map((t) => ({ id: t.id, name: t.name, is_full: contactCount(t.id) >= t.contact_limit }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'));
+    },
+
+    async checkTeamInvite(teamId, inviteCode) {
+      const orgId = checkInvite(teamId, inviteCode);
+      return db.organizations.find((o) => o.id === orgId)?.name ?? '';
+    },
+
+    async joinTeam(teamId, inviteCode) {
       const u = requireUser();
-      const org = db.organizations.find((o) => o.invite_code === inviteCode.trim().toUpperCase());
-      if (!org) return fail('邀請碼無效');
-      if (u.org_id) fail('此帳號已綁定公司');
-      u.org_id = org.id;
+      if (isAdmin()) fail('管理員帳號不需綁定隊伍');
+      bind(u.id, { teamId, inviteCode });
       commit();
-      return org.name;
+      notify();
+      return db.teams.find((t) => t.id === teamId)?.name ?? '';
     },
 
     async getSettings() {
@@ -168,11 +235,8 @@ export function createDemoApi(): DataApi {
     },
 
     async listOrganizations() {
-      return copy(
-        db.organizations
-          .filter((o) => isAdmin() || o.id === myOrg())
-          .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW')),
-      );
+      if (!isAdmin()) return [];
+      return copy([...db.organizations].sort((a, b) => a.name.localeCompare(b.name, 'zh-TW')));
     },
 
     async listOrgNames() {
@@ -182,36 +246,27 @@ export function createDemoApi(): DataApi {
 
     async createOrganization(input) {
       requireAdmin();
-      if (db.organizations.some((o) => o.name === input.name)) fail('單位名稱已存在');
-      db.organizations.push({
-        id: crypto.randomUUID(),
-        invite_code: crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase(),
-        ...input,
-      });
+      if (db.organizations.some((o) => o.name === input.name)) fail('公司名稱已存在');
+      db.organizations.push({ id: crypto.randomUUID(), ...input });
       commit();
     },
 
     async updateOrganization(id, patch) {
       requireAdmin();
       const org = db.organizations.find((o) => o.id === id) ?? fail('找不到公司');
-      if (patch.name && db.organizations.some((o) => o.id !== id && o.name === patch.name)) fail('單位名稱已存在');
+      if (patch.name && db.organizations.some((o) => o.id !== id && o.name === patch.name)) fail('公司名稱已存在');
       Object.assign(org, patch);
       commit();
     },
 
     async deleteOrganization(id) {
       requireAdmin();
-      // 模擬 organizations_before_delete + on delete cascade：只屬於該公司的隊伍整隊刪除，聯隊只移除該公司
-      const soloTeamIds = new Set(db.teams.filter((t) => t.org_ids.length === 1 && t.org_ids[0] === id).map((t) => t.id));
-      const goneMembers = new Set(db.members.filter((m) => m.org_id === id || soloTeamIds.has(m.team_id)).map((m) => m.id));
-      db.entries = db.entries.filter((e) => !goneMembers.has(e.member_id));
-      db.members = db.members.filter((m) => !goneMembers.has(m.id));
-      db.teams = db.teams.filter((t) => !soloTeamIds.has(t.id));
+      // 模擬 on delete cascade：該公司隊員、邀請碼、窗口綁定一併刪除，隊伍保留
+      removeMembers((m) => m.org_id === id);
       db.teams.forEach((t) => (t.org_ids = t.org_ids.filter((o) => o !== id)));
+      db.invites = db.invites.filter((i) => i.org_id !== id);
+      db.contacts = db.contacts.filter((c) => c.org_id !== id);
       db.organizations = db.organizations.filter((o) => o.id !== id);
-      db.users.forEach((u) => {
-        if (u.org_id === id) u.org_id = null;
-      });
       commit();
     },
 
@@ -225,21 +280,13 @@ export function createDemoApi(): DataApi {
     },
 
     async createTeam(input, orgIds) {
-      requireUser();
-      if (orgIds.length === 0) fail('至少需指定一家公司');
-      if (!isAdmin() && (orgIds.length !== 1 || orgIds[0] !== myOrg())) {
-        fail('公司窗口只能建立自己公司的隊伍；聯隊請洽管理員建立');
-      }
-      requireWritable();
-      if (orgIds.length === 1) {
-        const org = db.organizations.find((o) => o.id === orgIds[0]) ?? fail('找不到公司');
-        if (soloTeamCount(db.teams, org.id) >= org.team_quota) {
-          fail(`已達本公司可自組隊伍數上限（${org.team_quota} 隊）`);
-        }
-      }
-      if (db.teams.some((t) => t.name === input.name.trim())) fail('隊名已被使用，請換一個');
-      const team: Team = { id: crypto.randomUUID(), ...input, name: input.name.trim(), org_ids: [...orgIds] };
+      if (!isAdmin()) fail('隊伍由活動小組建立，請洽管理員');
+      const name = input.name.trim();
+      if (!name) fail('請輸入隊名');
+      if (db.teams.some((t) => t.name === name)) fail('隊名已被使用，請換一個');
+      const team: Team = { id: crypto.randomUUID(), ...input, name, contact_limit: 2, org_ids: [] };
       db.teams.push(team);
+      applyTeamOrgs(team, orgIds);
       commit();
       return copy(team);
     },
@@ -247,7 +294,13 @@ export function createDemoApi(): DataApi {
     async updateTeam(id, patch) {
       const team = getTeam(id);
       requireWritable();
-      if (patch.name && db.teams.some((t) => t.id !== id && t.name === patch.name)) fail('隊名已被使用，請換一個');
+      if (!isAdmin() && ((patch.name !== undefined && patch.name !== team.name) || patch.contact_limit !== undefined)) {
+        fail('隊名與窗口人數只能由活動小組修改');
+      }
+      if (patch.name !== undefined && db.teams.some((t) => t.id !== id && t.name === patch.name)) fail('隊名已被使用，請換一個');
+      if (patch.contact_limit !== undefined && !(Number.isInteger(patch.contact_limit) && patch.contact_limit >= 0)) {
+        fail('窗口人數需為 0 以上的整數');
+      }
       Object.assign(team, patch);
       commit();
     },
@@ -255,22 +308,46 @@ export function createDemoApi(): DataApi {
     async setTeamOrgs(id, orgIds) {
       requireAdmin();
       const team = getTeam(id);
-      if (orgIds.length === 0) fail('至少需指定一家公司');
       if (db.members.some((m) => m.team_id === id && !orgIds.includes(m.org_id))) {
         fail('要移除的公司在此隊仍有隊員，請先刪除其隊員');
       }
-      team.org_ids = [...orgIds];
+      applyTeamOrgs(team, orgIds);
       commit();
     },
 
     async deleteTeam(id) {
-      const team = getTeam(id);
-      if (!isAdmin() && team.org_ids.some((o) => o !== myOrg())) fail('聯隊只能由管理員刪除');
-      requireWritable();
-      const memberIds = new Set(db.members.filter((m) => m.team_id === id).map((m) => m.id));
-      db.entries = db.entries.filter((e) => !memberIds.has(e.member_id));
-      db.members = db.members.filter((m) => m.team_id !== id);
+      requireAdmin();
+      getTeam(id);
+      removeMembers((m) => m.team_id === id);
+      db.invites = db.invites.filter((i) => i.team_id !== id);
+      db.contacts = db.contacts.filter((c) => c.team_id !== id);
       db.teams = db.teams.filter((t) => t.id !== id);
+      commit();
+    },
+
+    async listTeamInvites() {
+      requireAdmin();
+      return copy(db.invites);
+    },
+
+    async setTeamInviteCode(teamId, orgId, inviteCode) {
+      requireAdmin();
+      const code = normalizeInviteCode(inviteCode);
+      if (!INVITE_CODE_PATTERN.test(code)) fail('邀請碼需為 6–20 位英文字母或數字');
+      const inv = db.invites.find((i) => i.team_id === teamId && i.org_id === orgId) ?? fail('找不到邀請碼');
+      if (db.invites.some((i) => i !== inv && i.invite_code === code)) fail('邀請碼已被使用，請換一組');
+      inv.invite_code = code;
+      commit();
+    },
+
+    async listTeamContacts() {
+      requireAdmin();
+      return db.contacts.map((c) => ({ ...c, email: db.users.find((u) => u.id === c.user_id)?.email ?? '' }));
+    },
+
+    async removeTeamContact(userId, teamId) {
+      requireAdmin();
+      db.contacts = db.contacts.filter((c) => !(c.user_id === userId && c.team_id === teamId));
       commit();
     },
 
@@ -280,7 +357,7 @@ export function createDemoApi(): DataApi {
 
     async addMembers(teamId, orgId, inputs) {
       const team = getTeam(teamId);
-      if (!isAdmin() && orgId !== myOrg()) fail('只能新增自己公司的隊員');
+      if (!isAdmin() && !isTeamOrgContact(teamId, orgId)) fail('只能新增自己公司的隊員');
       if (!team.org_ids.includes(orgId)) fail('此公司未參與該隊伍');
       const current = db.members.filter((m) => m.team_id === teamId).length;
       const msg = checkAddMembers(db.settings, current, inputs.length, isAdmin());
@@ -307,8 +384,7 @@ export function createDemoApi(): DataApi {
     async deleteMember(id) {
       getWritableMember(id);
       requireWritable();
-      db.entries = db.entries.filter((e) => e.member_id !== id);
-      db.members = db.members.filter((m) => m.id !== id);
+      removeMembers((m) => m.id === id);
       commit();
     },
 
@@ -321,10 +397,7 @@ export function createDemoApi(): DataApi {
     },
 
     async listEntries(filter) {
-      const visible = db.members.filter((m) => {
-        const t = teamOf(m);
-        return !!t && canAccessTeam(t) && (!filter?.teamId || m.team_id === filter.teamId);
-      });
+      const visible = db.members.filter((m) => canSeeMember(m) && (!filter?.teamId || m.team_id === filter.teamId));
       return copy(entriesOfMembers(db.entries, visible));
     },
 

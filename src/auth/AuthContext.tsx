@@ -5,7 +5,7 @@ interface AuthState {
   session: SessionInfo | null;
   loading: boolean;
   isAdmin: boolean;
-  /** 重新讀取登入狀態並回傳最新 session（登入 / 綁定單位後呼叫） */
+  /** 重新讀取登入狀態並回傳最新 session（登入 / 加入隊伍後呼叫） */
   refresh: () => Promise<SessionInfo | null>;
   signOut: () => Promise<void>;
 }
@@ -51,9 +51,10 @@ export function useAuth(): AuthState {
   return v;
 }
 
-/** 登入後應前往的頁面 */
+/** 登入後應前往的頁面：只綁定一隊的窗口直接進隊伍頁 */
 export function homePathFor(session: SessionInfo | null): string {
   if (!session) return '/login';
   if (session.role === 'super_admin') return '/admin';
-  return session.orgId ? '/org' : '/join';
+  if (session.teams.length === 0) return '/join';
+  return session.teams.length === 1 ? `/teams/${session.teams[0].teamId}` : '/org';
 }

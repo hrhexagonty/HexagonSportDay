@@ -5,7 +5,6 @@ import {
   entriesOfMembers,
   evaluateTeam,
   isMergedTeam,
-  plannedTeamCount,
   sortEvents,
   teamSizeLabel,
   type StatusLevel,
@@ -27,16 +26,15 @@ export default function Overview({ data }: { data: AdminData }) {
         const tm = members.filter((m) => m.team_id === t.id);
         return {
           team: t,
-          orgName: t.org_ids.map((id) => orgName.get(id) ?? '—').join('、'),
+          orgName: t.org_ids.length ? t.org_ids.map((id) => orgName.get(id) ?? '—').join('、') : '未分配',
           status: evaluateTeam(settings, events, tm, entriesOfMembers(entries, tm)),
         };
       })
       .sort((a, b) => a.orgName.localeCompare(b.orgName, 'zh-TW') || a.team.name.localeCompare(b.team.name, 'zh-TW'));
   }, [settings, events, orgs, teams, members, entries]);
 
-  const quotaSum = orgs.reduce((s, o) => s + o.team_quota, 0);
   const mergedCount = teams.filter(isMergedTeam).length;
-  const planned = plannedTeamCount(quotaSum, teams);
+  const unassigned = teams.filter((t) => t.org_ids.length === 0).length;
   const complete = rows.filter((r) => r.status.level === 'complete').length;
   const female = members.filter((m) => m.gender === 'F').length;
   const shown = rows.filter(
@@ -51,8 +49,7 @@ export default function Overview({ data }: { data: AdminData }) {
         <StatCard
           label="參與公司"
           value={`${orgs.length} 家`}
-          hint={`自組額度 ${quotaSum} ＋ 聯隊 ${mergedCount} ＝ ${planned} 隊`}
-          tone={planned === target ? 'neutral' : 'warn'}
+          hint={`聯隊 ${mergedCount} 隊 · 窗口 ${data.contacts.length} 人`}
         />
         <StatCard
           label="已建立隊伍"
@@ -68,9 +65,11 @@ export default function Overview({ data }: { data: AdminData }) {
         />
       </div>
 
-      {planned !== target && (
+      {(teams.length !== target || unassigned > 0) && (
         <div className="notice notice-warn">
-          各公司自組額度 {quotaSum} 隊 ＋ 聯隊 {mergedCount} 隊 ＝ {planned} 隊，與目標 {target} 隊不一致，請至「公司管理」或「隊伍管理」調整。
+          {teams.length !== target && `已建立 ${teams.length} 隊，與目標 ${target} 隊不一致。`}
+          {unassigned > 0 && `有 ${unassigned} 隊尚未分配公司，窗口無法註冊。`}
+          請至「隊伍配置」調整。
         </div>
       )}
 

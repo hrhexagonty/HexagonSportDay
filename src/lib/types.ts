@@ -26,12 +26,10 @@ export interface Settings {
   max_events_per_member: number;
 }
 
-/** 公司；team_quota = 可自行建立的隊伍數（聯隊不占額度） */
+/** 公司（完整資料僅管理員可讀） */
 export interface Organization {
   id: string;
   name: string;
-  team_quota: number;
-  invite_code: string;
   contact_name: string | null;
   contact_phone: string | null;
 }
@@ -47,8 +45,34 @@ export interface Team {
   name: string;
   captain_name: string | null;
   captain_phone: string | null;
-  /** 參與公司；超過 1 家即為聯隊 */
+  /** 可綁定的窗口帳號數 */
+  contact_limit: number;
+  /** 參與公司；超過 1 家即為聯隊，0 家為尚未分配 */
   org_ids: string[];
+}
+
+/** 前台註冊用的隊伍選項（未登入可取得；只含已分配公司的隊伍） */
+export interface TeamOption {
+  id: string;
+  name: string;
+  /** 窗口名額已滿 */
+  is_full: boolean;
+}
+
+/** 隊伍 × 公司的邀請碼（僅管理員可讀）：窗口輸入哪組碼就歸屬哪家公司 */
+export interface TeamInvite {
+  team_id: string;
+  org_id: string;
+  invite_code: string;
+}
+
+/** 已綁定隊伍的窗口帳號（管理員檢視用） */
+export interface TeamContact {
+  user_id: string;
+  team_id: string;
+  org_id: string;
+  email: string;
+  created_at: string;
 }
 
 /** 隊員個資（member_private 表）：只有隊員所屬公司窗口與管理員看得到 */
@@ -89,7 +113,9 @@ export interface EventEntry {
 }
 
 // ---- 表單輸入型別 ----
-export type OrgInput = Pick<Organization, 'name' | 'team_quota' | 'contact_name' | 'contact_phone'>;
+export type OrgInput = Pick<Organization, 'name' | 'contact_name' | 'contact_phone'>;
 export type TeamInput = Pick<Team, 'name' | 'captain_name' | 'captain_phone'>;
+/** 隊伍可修改欄位；name、contact_limit 只有管理員能改 */
+export type TeamPatch = Partial<TeamInput & Pick<Team, 'contact_limit'>>;
 export type MemberInput = Pick<Member, 'name' | 'gender'> & MemberPrivate;
 export type EventInput = Pick<SportEvent, 'name' | 'description' | 'min_per_team' | 'max_per_team' | 'min_female'>;

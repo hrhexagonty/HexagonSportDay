@@ -26,8 +26,9 @@ function TeamInfo({ data }: { data: TeamPageData }) {
   async function save(e: FormEvent) {
     e.preventDefault();
     try {
+      // 隊名只有管理員能改（窗口送出隊名會被資料庫拒絕）
       await api.updateTeam(team.id, {
-        name: form.name.trim(),
+        ...(data.isAdmin ? { name: form.name.trim() } : {}),
         captain_name: blankToNull(form.captain),
         captain_phone: blankToNull(form.phone),
       });
@@ -44,7 +45,7 @@ function TeamInfo({ data }: { data: TeamPageData }) {
     try {
       await api.deleteTeam(team.id);
       toast.ok('隊伍已刪除');
-      navigate(data.isAdmin ? '/admin' : '/org');
+      navigate('/admin');
     } catch (err) {
       toast.error(err);
     }
@@ -54,8 +55,13 @@ function TeamInfo({ data }: { data: TeamPageData }) {
     return (
       <form className="card stack" onSubmit={save}>
         <div className="row-3">
-          <Field label="隊名">
-            <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Field label="隊名" hint={data.isAdmin ? undefined : '隊名由活動小組設定'}>
+            <input
+              required
+              disabled={!data.isAdmin}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </Field>
           <Field label="隊長姓名">
             <input value={form.captain} onChange={(e) => setForm({ ...form, captain: e.target.value })} />
@@ -93,9 +99,9 @@ function TeamInfo({ data }: { data: TeamPageData }) {
       {editable && (
         <div className="actions">
           <button className="btn btn-ghost btn-sm" onClick={startEdit}>
-            編輯隊伍資料
+            {data.isAdmin ? '編輯隊伍資料' : '編輯隊長資料'}
           </button>
-          {(data.isAdmin || !data.merged) && (
+          {data.isAdmin && (
             <button className="btn btn-danger-ghost btn-sm" onClick={remove}>
               刪除隊伍
             </button>
@@ -127,7 +133,8 @@ export default function TeamPage() {
   const { settings, events, team, members, entries, orgNames } = q.data;
   if (!team) return <EmptyState title="找不到隊伍">隊伍可能已被刪除，或您沒有檢視權限。</EmptyState>;
 
-  const myOrgId = session?.orgId ?? null;
+  // 自己在這隊代表的公司（以哪家公司的邀請碼加入）；管理員為 null
+  const myOrgId = session?.teams.find((t) => t.teamId === team.id)?.orgId ?? null;
   const data: TeamPageData = {
     settings,
     events,
@@ -148,7 +155,7 @@ export default function TeamPage() {
   return (
     <div className="page">
       <Link className="back-link" to={isAdmin ? '/admin' : '/org'}>
-        ← 回{isAdmin ? '管理後台' : '隊伍列表'}
+        ← 回{isAdmin ? '管理後台' : '我的隊伍'}
       </Link>
       <TeamInfo data={data} />
 

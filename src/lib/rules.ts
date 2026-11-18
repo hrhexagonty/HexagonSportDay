@@ -39,15 +39,6 @@ export function isMergedTeam(team: Pick<Team, 'org_ids'>): boolean {
   return team.org_ids.length > 1;
 }
 
-/** 某公司「自組」的隊伍數（只屬於該公司的隊伍；聯隊不占額度） */
-export function soloTeamCount(teams: Pick<Team, 'org_ids'>[], orgId: string): number {
-  return teams.filter((t) => t.org_ids.length === 1 && t.org_ids[0] === orgId).length;
-}
-
-/** 目標隊數的組成：各公司自組額度合計 + 聯隊數 */
-export function plannedTeamCount(quotaSum: number, teams: Pick<Team, 'org_ids'>[]): number {
-  return quotaSum + teams.filter(isMergedTeam).length;
-}
 
 export function sortEvents(events: SportEvent[]): SportEvent[] {
   return [...events].sort((a, b) => a.sort_order - b.sort_order);

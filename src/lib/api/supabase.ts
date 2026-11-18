@@ -1,7 +1,20 @@
 // 正式環境資料存取：所有權限檢查都交給 Supabase RLS、DB trigger 與 RPC
 import { createClient, type PostgrestError } from '@supabase/supabase-js';
-import type { EventEntry, Member, MemberPrivate, OrgName, Organization, Settings, SportEvent, Team } from '../types';
-import type { DataApi, SessionInfo } from './types';
+import { normalizeInviteCode } from '../inviteCode';
+import type {
+  EventEntry,
+  Member,
+  MemberPrivate,
+  OrgName,
+  Organization,
+  Settings,
+  SportEvent,
+  Team,
+  TeamContact,
+  TeamInvite,
+  TeamOption,
+} from '../types';
+import type { DataApi, SessionInfo, SessionTeam } from './types';
 
 const PAGE_SIZE = 1000; // Supabase 預設單次最多回傳 1000 筆
 
@@ -11,10 +24,12 @@ function translateError(error: PostgrestError): string {
   if (error.code === '23505') {
     if (text.includes('national_id')) return '身分證字號已報名，同一人不可重複報名';
     if (text.includes('teams_name')) return '隊名已被使用，請換一個';
-    if (text.includes('organizations_name')) return '單位名稱已存在';
+    if (text.includes('organizations_name')) return '公司名稱已存在';
+    if (text.includes('invite_code')) return '邀請碼已被使用，請換一組';
     return '資料重複';
   }
   if (error.code === '23514' && text.includes('national_id')) return '身分證字號格式或檢查碼錯誤';
+  if (error.code === '23514' && text.includes('invite_code')) return '邀請碼需為 6–20 位英文字母或數字';
   if (error.code === '23503' && text.includes('members_team_org_fkey')) return '此公司未參與該隊伍';
   if (error.code === '42501') return '權限不足';
   // P0001 為 trigger / RPC 主動丟出的中文訊息，直接顯示
@@ -24,8 +39,10 @@ function translateError(error: PostgrestError): string {
 function translateAuthError(message: string): string {
   if (/invalid login credentials/i.test(message)) return '帳號或密碼錯誤';
   if (/email not confirmed/i.test(message)) return '信箱尚未驗證，請先至信箱點擊驗證連結';
-  if (/already registered/i.test(message)) return '此信箱已註冊，請直接登入';
+  if (/already registered/i.test(message)) return '此信箱已註冊：請改用「登入」，登入後可在「我的隊伍」輸入邀請碼加入其他隊伍';
   if (/password should be at least/i.test(message)) return '密碼長度不足';
+  // handle_new_user 綁定隊伍失敗（例如檢查後名額剛好被搶走）時，Supabase 只回傳這句
+  if (/database error saving new user/i.test(message)) return '註冊失敗：邀請碼可能已失效或窗口名額已滿，請重新確認';
   return message;
 }
 
@@ -39,7 +56,7 @@ async function run<T>(p: PromiseLike<Result<T>>): Promise<T> {
 
 // ---- 資料列轉換 ----
 type TeamRow = Omit<Team, 'org_ids'> & { team_orgs: { org_id: string }[] | null };
-const TEAM_SELECT = 'id, name, captain_name, captain_phone, team_orgs(org_id)';
+const TEAM_SELECT = 'id, name, captain_name, captain_phone, contact_limit, team_orgs(org_id)';
 const toTeam = ({ team_orgs, ...t }: TeamRow): Team => ({ ...t, org_ids: (team_orgs ?? []).map((x) => x.org_id) });
 
 type MemberRow = Omit<Member, 'private'> & { member_private: (MemberPrivate & { member_id?: string }) | null };
@@ -73,16 +90,17 @@ export function createSupabaseApi(url: string, key: string): DataApi {
         data: { session },
       } = await sb.auth.getSession();
       if (!session) return null;
-      const profile = await run(
-        sb.from('profiles').select('role, org_id, organizations(name)').eq('id', session.user.id).maybeSingle(),
-      );
-      const org = profile?.organizations as unknown as { name: string } | null;
+      const [profile, teams] = await Promise.all([
+        run(sb.from('profiles').select('role').eq('id', session.user.id).maybeSingle()),
+        run(sb.rpc('my_teams')) as Promise<{ team_id: string; team_name: string; org_id: string; org_name: string }[]>,
+      ]);
       return {
         userId: session.user.id,
         email: session.user.email ?? '',
         role: profile?.role ?? 'org_admin',
-        orgId: profile?.org_id ?? null,
-        orgName: org?.name ?? null,
+        teams: (teams ?? []).map(
+          (t): SessionTeam => ({ teamId: t.team_id, teamName: t.team_name, orgId: t.org_id, orgName: t.org_name }),
+        ),
       };
     },
 
@@ -99,11 +117,15 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       if (error) throw new Error(translateAuthError(error.message));
     },
 
-    async signUp(email, password) {
+    async signUp(email, password, join) {
+      // 隊伍與邀請碼放在 user metadata，由 DB 的 handle_new_user 於建立帳號時一併綁定
       const { data, error } = await sb.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: window.location.origin + window.location.pathname },
+        options: {
+          emailRedirectTo: window.location.origin + window.location.pathname,
+          data: { team_id: join.teamId, invite_code: normalizeInviteCode(join.inviteCode) },
+        },
       });
       if (error) throw new Error(translateAuthError(error.message));
       return { needsEmailConfirm: !data.session };
@@ -113,8 +135,16 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       await sb.auth.signOut();
     },
 
-    async joinOrg(inviteCode) {
-      return run(sb.rpc('join_org', { p_code: inviteCode }));
+    async listTeamOptions() {
+      return run(sb.rpc('team_options')) as Promise<TeamOption[]>;
+    },
+
+    async checkTeamInvite(teamId, inviteCode) {
+      return run(sb.rpc('check_team_invite', { p_team_id: teamId, p_code: normalizeInviteCode(inviteCode) })) as Promise<string>;
+    },
+
+    async joinTeam(teamId, inviteCode) {
+      return run(sb.rpc('join_team', { p_team_id: teamId, p_code: normalizeInviteCode(inviteCode) })) as Promise<string>;
     },
 
     async getSettings() {
@@ -183,7 +213,35 @@ export function createSupabaseApi(url: string, key: string): DataApi {
     },
 
     async deleteTeam(id) {
-      await run(sb.from('teams').delete().eq('id', id));
+      const rows = await run(sb.from('teams').delete().eq('id', id).select('id'));
+      if (!rows?.length) throw new Error('權限不足：隊伍只能由活動小組刪除');
+    },
+
+    async listTeamInvites() {
+      return run(sb.from('team_invites').select('team_id, org_id, invite_code')) as Promise<TeamInvite[]>;
+    },
+
+    async setTeamInviteCode(teamId, orgId, inviteCode) {
+      await run(
+        sb
+          .from('team_invites')
+          .update({ invite_code: normalizeInviteCode(inviteCode) })
+          .eq('team_id', teamId)
+          .eq('org_id', orgId),
+      );
+    },
+
+    async listTeamContacts() {
+      const rows = await run(
+        sb.from('team_contacts').select('user_id, team_id, org_id, created_at, profiles(email)').order('created_at'),
+      );
+      return (rows as unknown as (Omit<TeamContact, 'email'> & { profiles: { email: string | null } | null })[]).map(
+        ({ profiles, ...c }) => ({ ...c, email: profiles?.email ?? '' }),
+      );
+    },
+
+    async removeTeamContact(userId, teamId) {
+      await run(sb.from('team_contacts').delete().eq('user_id', userId).eq('team_id', teamId));
     },
 
     async listMembers(filter) {
