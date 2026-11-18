@@ -62,10 +62,14 @@ type TeamRow = Omit<Team, 'org_ids'> & { team_orgs: { org_id: string }[] | null 
 const TEAM_SELECT = 'id, name, captain_name, captain_phone, contact_limit, team_orgs(org_id)';
 const toTeam = ({ team_orgs, ...t }: TeamRow): Team => ({ ...t, org_ids: (team_orgs ?? []).map((x) => x.org_id) });
 
-type MemberRow = Omit<Member, 'private'> & { member_private: (MemberPrivate & { member_id?: string }) | null };
+type MemberRow = Omit<Member, 'private' | 'diet'> & { member_private: (MemberPrivate & { member_id?: string }) | null };
 const MEMBER_SELECT =
   'id, team_id, org_id, name, gender, member_private(national_id, birthday, phone, shirt_size, diet, special_needs)';
-const toMember = ({ member_private, ...m }: MemberRow): Member => ({ ...m, private: member_private ?? null });
+const toMember = ({ member_private, ...m }: MemberRow): Member => ({
+  ...m,
+  diet: member_private?.diet ?? null,
+  private: member_private ?? null,
+});
 
 type SquadRow = Omit<OrgSquad, 'member_ids'> & { org_squad_members: { member_id: string; created_at: string }[] | null };
 const SQUAD_SELECT = 'id, org_id, event_id, submitted_at, created_at, org_squad_members(member_id, created_at)';
@@ -290,7 +294,15 @@ export function createSupabaseApi(url: string, key: string): DataApi {
         if (filter?.teamId) q = q.eq('team_id', filter.teamId);
         return q.range(from, to) as unknown as PromiseLike<Result<MemberRow[] | null>>;
       });
-      return rows.map(toMember);
+      // 用餐習慣存在個資表，聯隊其他公司的隊員要另外以 member_diets() 取得（只回傳 diet）
+      const diets = await fetchAll<{ member_id: string; diet: Member['diet'] }>((from, to) =>
+        sb.rpc('member_diets', { p_team_id: filter?.teamId ?? null }).range(from, to),
+      );
+      const dietOf = new Map(diets.map((d) => [d.member_id, d.diet]));
+      return rows.map((r) => {
+        const m = toMember(r);
+        return { ...m, diet: dietOf.get(m.id) ?? m.diet };
+      });
     },
 
     async addMembers(teamId, orgId, inputs) {

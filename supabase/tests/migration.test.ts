@@ -282,6 +282,25 @@ describe('隊員與個資', () => {
     });
   });
 
+  it('聯隊其他公司只多看得到用餐習慣，其餘個資仍看不到；非該隊窗口與訪客什麼都看不到', async () => {
+    await as(U.admin, `update member_private set diet = 'vegan' where member_id = $1`, [await memberId('乙二')]);
+    const diets = await as<{ member_id: string; diet: string }>(U.c, 'select * from member_diets($1)', [team.merged]);
+    const byName = new Map<string, string>();
+    for (const r of diets.rows) {
+      const n = (await db.query<{ name: string }>('select name from members where id = $1', [r.member_id])).rows[0].name;
+      byName.set(n, r.diet);
+    }
+    expect(Object.fromEntries(byName)).toEqual({ 乙一: 'meat', 乙二: 'vegan', 丙一: 'meat' });
+    expect(Object.keys(diets.rows[0]).sort()).toEqual(['diet', 'member_id']);
+    // 直接查個資表仍只拿到自己公司的隊員
+    const own = await as<{ n: number }>(U.c, 'select count(*)::int n from member_private');
+    expect(own.rows[0].n).toBe(1);
+    // 不是該隊窗口：查不到；不指定隊伍也只回傳自己隊伍的
+    expect((await as(U.a, 'select * from member_diets($1)', [team.merged])).rows).toEqual([]);
+    expect((await as(U.c, 'select * from member_diets()')).rows).toHaveLength(3);
+    await expect(asAnon('select * from member_diets($1)', [team.merged])).rejects.toThrow('permission denied');
+  });
+
   it('同公司但未綁定該隊的窗口看不到隊員', async () => {
     await addMembers(U.a, team.a2, org['甲'], [row('甲二一', 'M', 'C100000003')]);
     expect((await as(U.d, 'select name from members')).rows).toEqual([]);

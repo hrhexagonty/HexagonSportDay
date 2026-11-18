@@ -40,7 +40,7 @@ const relay: SportEvent = {
 const optional: SportEvent = { ...relay, id: 'opt', name: '選填項目', min_per_team: 0, max_per_team: 2, min_female: 1, sort_order: 2 };
 
 function member(id: string, gender: Gender): Member {
-  return { id, team_id: 't1', org_id: 'o1', name: `隊員${id}`, gender, private: null };
+  return { id, team_id: 't1', org_id: 'o1', name: `隊員${id}`, gender, diet: 'meat', private: null };
 }
 
 const entry = (event_id: string, member_id: string): EventEntry => ({ event_id, member_id });

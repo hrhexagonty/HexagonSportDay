@@ -76,7 +76,12 @@ export function createDemoApi(): DataApi {
   const teamOf = (m: Member) => db.teams.find((t) => t.id === m.team_id);
   const canSeeMember = (m: Member) => !!teamOf(m) && canAccessTeam(teamOf(m)!);
   const canSeePrivate = (m: Member) => isAdmin() || isTeamOrgContact(m.team_id, m.org_id);
-  const view = (m: Member): Member => ({ ...copy(m), private: canSeePrivate(m) ? copy(m.private) : null });
+  // 模擬 member_diets()：用餐習慣同隊都看得到，其餘個資只限所屬公司
+  const view = (m: Member): Member => ({
+    ...copy(m),
+    diet: m.private?.diet ?? null,
+    private: canSeePrivate(m) ? copy(m.private) : null,
+  });
   /** 管理員，或該公司（任一隊）的窗口：可看同仁名單、管理公司組隊 */
   const canManageOrg = (orgId: string) => isAdmin() || myContacts().some((c) => c.org_id === orgId);
   const getSquad = (id: string) => {
@@ -108,7 +113,7 @@ export function createDemoApi(): DataApi {
     return clean;
   }
 
-  const splitInput = ({ name, gender, ...priv }: MemberInput) => ({ name, gender, private: priv });
+  const splitInput = ({ name, gender, ...priv }: MemberInput) => ({ name, gender, diet: priv.diet, private: priv });
 
   // ---- 邀請碼與窗口綁定（模擬 team_invites / team_contacts 與 bind_team_contact） ----
   const contactCount = (teamId: string) => db.contacts.filter((c) => c.team_id === teamId).length;
@@ -422,7 +427,10 @@ export function createDemoApi(): DataApi {
     async purgePrivateData() {
       requireAdmin();
       const n = db.members.filter((m) => m.private).length;
-      db.members.forEach((m) => (m.private = null));
+      db.members.forEach((m) => {
+        m.private = null;
+        m.diet = null;
+      });
       commit();
       return n;
     },

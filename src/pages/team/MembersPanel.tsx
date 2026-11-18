@@ -330,7 +330,8 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
     }
   }
 
-  const privateCols = 6;
+  // 只限所屬公司檢視的欄位：證號、生日、特殊需求、手機、尺寸
+  const privateCols = 5;
 
   return (
     <div className="stack">
@@ -354,7 +355,7 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
 
       {merged && !data.isAdmin && (
         <div className="notice notice-info">
-          這是聯隊：你只能新增、編輯「{orgNames.get(data.myOrgId ?? '')}」的隊員，其他公司隊員只顯示姓名與性別（供安排項目選手）。
+          這是聯隊：你只能新增、編輯「{orgNames.get(data.myOrgId ?? '')}」的隊員，其他公司隊員只顯示姓名、性別與用餐習慣；身分證 / 居留證字號、生日、特殊需求、手機、衣服尺寸只有該公司窗口看得到。
         </div>
       )}
 
@@ -383,9 +384,9 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
                 <th>姓名</th>
                 {merged && <th>所屬公司</th>}
                 <th>性別</th>
+                <th>用餐</th>
                 <th>證號</th>
                 <th>生日</th>
-                <th>用餐</th>
                 <th>特殊需求</th>
                 <th>手機</th>
                 <th>尺寸</th>
@@ -406,11 +407,19 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
                     <td>
                       <Badge tone={m.gender === 'F' ? 'accent' : 'primary'}>{GENDER_LABEL[m.gender]}</Badge>
                     </td>
+                    <td>
+                      {!m.diet ? (
+                        <span className="muted">—</span>
+                      ) : m.diet === 'meat' ? (
+                        DIET_LABEL[m.diet]
+                      ) : (
+                        <Badge tone="ok">{DIET_LABEL[m.diet]}</Badge>
+                      )}
+                    </td>
                     {p ? (
                       <>
                         <td className="mono">{maskId(p.national_id)}</td>
                         <td className="mono">{p.birthday}</td>
-                        <td>{p.diet === 'meat' ? DIET_LABEL[p.diet] : <Badge tone="ok">{DIET_LABEL[p.diet]}</Badge>}</td>
                         <td>{p.special_needs ? <Badge tone="warn">{p.special_needs}</Badge> : <span className="muted">—</span>}</td>
                         <td className="mono">{p.phone ?? '—'}</td>
                         <td>{p.shirt_size ?? '—'}</td>

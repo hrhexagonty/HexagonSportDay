@@ -84,6 +84,8 @@ export interface Member {
   org_id: string; // 所屬公司
   name: string;
   gender: Gender;
+  /** 用餐習慣：同隊窗口（含聯隊其他公司）都看得到；null = 個資已清除 */
+  diet: Diet | null;
   private: MemberPrivate | null;
 }
 

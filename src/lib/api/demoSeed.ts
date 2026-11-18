@@ -167,18 +167,20 @@ export function createSeed(): DemoDb {
     orgIdxs.forEach((orgIdx, k) => {
       for (let i = 0; i < sizes[k]; i++) {
         const gender: Gender = rng() < 0.45 ? 'F' : 'M';
+        const diet = fakeDiet();
         teamMembers.push({
           id: `m-${ti + 1}-${teamMembers.length + 1}`,
           team_id: team.id,
           org_id: organizations[orgIdx].id,
           name: pick(SURNAMES) + pick(GIVEN) + pick(GIVEN),
           gender,
+          diet,
           private: {
             national_id: fakeId(gender),
             birthday: `${int(1966, 2003)}-${String(int(1, 12)).padStart(2, '0')}-${String(int(1, 28)).padStart(2, '0')}`,
             phone: `09${String(Math.floor(rng() * 1e8)).padStart(8, '0')}`,
             shirt_size: pick(SHIRT_SIZES.slice(1, 6)),
-            diet: fakeDiet(),
+            diet,
             special_needs: rng() < 0.06 ? pick(NEEDS) : null,
           },
         });
