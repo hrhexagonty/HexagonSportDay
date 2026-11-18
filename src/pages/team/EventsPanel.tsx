@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { CheckRow, Figure, GenderLegend, GhostFigure } from '../../components/Figure';
 import { useToast } from '../../components/Toast';
-import { EmptyState, IssueList, StatusBadge } from '../../components/ui';
+import { EmptyState, IssueList } from '../../components/ui';
 import { api } from '../../lib/api';
-import { checkAddEntry, evaluateTeam, levelOf, teamSizeLabel, type EventStatus, type StatusLevel } from '../../lib/rules';
+import { checkAddEntry, evaluateTeam, isCompanyEvent, levelOf, teamSizeLabel, type EventStatus } from '../../lib/rules';
 import { GENDER_LABEL, type EventEntry, type Member } from '../../lib/types';
 import type { TeamPageData } from './types';
 
@@ -27,171 +28,22 @@ interface DragState {
 
 const sameEntry = (e: EventEntry, eventId: string, memberId: string) => e.event_id === eventId && e.member_id === memberId;
 
-function PersonIcon() {
-  return (
-    <svg className="figure-icon" viewBox="0 0 32 40" aria-hidden>
-      <circle cx="16" cy="9" r="7.5" />
-      <path d="M2 38v-5c0-7.7 6.3-14 14-14s14 6.3 14 14v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" />
-    </svg>
-  );
-}
-
-/** 隊員人偶：藍色為男、粉色為女，下方顯示姓名 */
-function Figure({
-  member,
-  title,
-  badge,
-  selected = false,
-  dimmed = false,
-  onSelect,
-  onDragStart,
-  onDragEnd,
-  onRemove,
-}: {
-  member: Member;
-  title: string;
-  /** 右上角小標（例如已報項目數） */
-  badge?: ReactNode;
-  selected?: boolean;
-  dimmed?: boolean;
-  onSelect?: () => void;
-  onDragStart?: (e: DragEvent) => void;
-  onDragEnd?: () => void;
-  onRemove?: () => void;
-}) {
-  function onKey(e: ReactKeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onSelect?.();
-    }
-  }
-  const cls = [
-    'figure',
-    member.gender === 'F' ? 'figure-f' : 'figure-m',
-    selected && 'is-selected',
-    dimmed && 'is-dimmed',
-    onDragStart && 'is-draggable',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <div
-      className={cls}
-      title={title}
-      draggable={!!onDragStart}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      role={onSelect ? 'button' : undefined}
-      tabIndex={onSelect ? 0 : undefined}
-      aria-pressed={onSelect ? selected : undefined}
-      aria-label={title}
-      onClick={(e) => {
-        if (!onSelect) return;
-        e.stopPropagation(); // 不要觸發外層項目框的「點選加入」
-        onSelect();
-      }}
-      onKeyDown={onSelect ? onKey : undefined}
-    >
-      <PersonIcon />
-      <span className="figure-name">{member.name}</span>
-      {badge != null && <span className="figure-badge">{badge}</span>}
-      {onRemove && (
-        <button
-          type="button"
-          className="figure-x"
-          aria-label={`取消 ${member.name} 的這項報名`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-        >
-          ×
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** 空白名額 */
-function GhostFigure() {
-  return (
-    <div className="figure figure-ghost" aria-hidden>
-      <PersonIcon />
-      <span className="figure-name">&nbsp;</span>
-    </div>
-  );
-}
-
-function GenderLegend({ male, female }: { male?: number; female?: number }) {
-  return (
-    <span className="gender-legend">
-      <span className="legend-m">男{male != null && ` ${male}`}</span>
-      <span className="legend-f">女{female != null && ` ${female}`}</span>
-    </span>
-  );
-}
-
-/** 男女分色的進度條；min 介於 0 與 max 之間時標出下限 */
-function GenderBar({ male, female, max, min }: { male: number; female: number; max: number; min: number }) {
-  const scale = Math.max(max, male + female, 1);
-  const pct = (v: number) => `${(v / scale) * 100}%`;
-  return (
-    <div className="gbar" role="img" aria-label={`男 ${male} 人、女 ${female} 人，上限 ${max} 人`}>
-      <span className="gbar-m" style={{ width: pct(male) }} />
-      <span className="gbar-f" style={{ width: pct(female) }} />
-      {min > 0 && min < max && <span className="gbar-min" style={{ left: pct(min) }} title={`下限 ${min} 人`} />}
-    </div>
-  );
-}
-
-function CheckRow({
-  label,
-  male,
-  female,
-  max,
-  min,
-  level,
-  note,
-}: {
-  label: string;
-  male: number;
-  female: number;
-  max: number;
-  min: number;
-  level: StatusLevel;
-  note: string;
-}) {
-  return (
-    <li className={`check-row check-row-${level}`}>
-      <div className="check-row-label">
-        <b>{label}</b>
-        <StatusBadge level={level} />
-      </div>
-      <GenderBar male={male} female={female} max={max} min={min} />
-      <div className="check-row-count">
-        <span>
-          <b>{male + female}</b> / {max}
-        </span>
-        <span>
-          男 {male} · 女 {female}
-        </span>
-      </div>
-      <p className="check-row-note">{note}</p>
-    </li>
-  );
-}
-
 export default function EventsPanel({ data }: { data: TeamPageData }) {
   const { settings, events, members, editable, isAdmin, merged, orgNames, team, reload } = data;
   const toast = useToast();
 
+  // 只處理以隊伍報名的項目；健力（以公司組隊）改版前留下的報名不顯示、也不計入每人項目數
+  const serverEntries = useMemo(() => {
+    const companyIds = new Set(events.filter(isCompanyEvent).map((e) => e.id));
+    return data.entries.filter((e) => !companyIds.has(e.event_id));
+  }, [data.entries, events]);
+
   // 畫面上的報名紀錄：操作後立即反映；沒有進行中的操作時才以伺服器資料為準（避免連續拖曳時閃爍）
-  const [entries, setEntries] = useState<EventEntry[]>(data.entries);
+  const [entries, setEntries] = useState<EventEntry[]>(serverEntries);
   const inflight = useRef(0);
   useEffect(() => {
-    if (inflight.current === 0) setEntries(data.entries);
-  }, [data.entries]);
+    if (inflight.current === 0) setEntries(serverEntries);
+  }, [serverEntries]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
   /** 拖曳經過的放置區：項目 id 或 'pool' */
@@ -459,6 +311,7 @@ export default function EventsPanel({ data }: { data: TeamPageData }) {
                 onDragStart={editable ? (de) => startDrag(de, m.id, ev.id) : undefined}
                 onDragEnd={endDrag}
                 onRemove={editable ? () => unplace(ev.id, m.id) : undefined}
+                removeLabel={`取消 ${m.name} 的這項報名`}
               />
             );
           })}

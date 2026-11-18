@@ -2,10 +2,12 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { RequireAuth } from './auth/RequireAuth';
 import Layout from './components/Layout';
 import AdminPage from './pages/admin/AdminPage';
+import CompanyPage from './pages/Company';
 import Home from './pages/Home';
 import JoinTeam from './pages/JoinTeam';
 import Login from './pages/Login';
 import OrgDashboard from './pages/OrgDashboard';
+import Rules from './pages/Rules';
 import TeamPage from './pages/team/TeamPage';
 
 export default function App() {
@@ -14,6 +16,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/rules" element={<Rules />} />
         <Route
           path="/join"
           element={
@@ -27,6 +30,14 @@ export default function App() {
           element={
             <RequireAuth need="org">
               <OrgDashboard />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/company"
+          element={
+            <RequireAuth need="org">
+              <CompanyPage />
             </RequireAuth>
           }
         />

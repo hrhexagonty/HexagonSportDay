@@ -17,6 +17,9 @@ const U = {
   c: '00000000-0000-0000-0000-0000000000c1', // 丙公司窗口（聯隊）
   d: '00000000-0000-0000-0000-0000000000d1',
   e: '00000000-0000-0000-0000-0000000000e1',
+  f: '00000000-0000-0000-0000-0000000000f2', // 戊公司（戊一隊）窗口
+  g: '00000000-0000-0000-0000-0000000000f3', // 戊公司（戊二隊）窗口
+  h: '00000000-0000-0000-0000-0000000000f4', // 己公司窗口
 };
 const org: Record<string, string> = {};
 const team: Record<string, string> = {};
@@ -79,6 +82,13 @@ const row = (name: string, gender: 'M' | 'F', id: string) => ({
 });
 const addMembers = (user: string, teamId: string, orgId: string, rows: unknown[]) =>
   as(user, 'select add_members($1, $2, $3)', [teamId, orgId, JSON.stringify(rows)]);
+/** 產生通過檢查碼的身分證字號（P 開頭；第 2 碼 1 = 男、2 = 女） */
+function twId(gender: 'M' | 'F', seq: number): string {
+  const body = `${gender === 'M' ? 1 : 2}${String(seq).padStart(7, '0')}`;
+  let sum = 2 + 3 * 9; // P = 23
+  [...body].forEach((d, i) => (sum += Number(d) * (8 - i)));
+  return `P${body}${(10 - (sum % 10)) % 10}`;
+}
 const memberId = async (name: string) =>
   (await db.query<{ id: string }>('select id from members where name = $1', [name])).rows[0].id;
 
@@ -335,5 +345,120 @@ describe('截止與管理員操作', () => {
     );
     expect(after.rows[0]).toEqual({ t: 1, m: 1, i: 1 });
     expect(await contactsOf(U.b)).toEqual([]);
+  });
+});
+
+describe('公司組隊（健力）', () => {
+  const squad: Record<string, string> = {};
+  const ids = async (names: string[]) => Promise.all(names.map(memberId));
+  const addTo = (user: string, squadId: string, name: string) =>
+    memberId(name).then((id) => as(user, 'insert into org_squad_members (squad_id, member_id) values ($1, $2)', [squadId, id]));
+  const submit = (user: string, squadId: string, on: boolean) =>
+    as(user, `update org_squads set submitted_at = ${on ? 'now()' : 'null'} where id = $1`, [squadId]);
+
+  beforeAll(async () => {
+    await as(U.admin, 'update settings set registration_open = true where id = 1');
+    await as(U.admin, `insert into organizations (name) values ('戊'), ('己')`);
+    for (const r of (await db.query<{ name: string; id: string }>('select name, id from organizations')).rows) org[r.name] = r.id;
+    const create = async (name: string, orgIds: string[]) =>
+      (await as<{ id: string }>(U.admin, `select create_team($1, null, null, $2) id`, [name, orgIds])).rows[0].id;
+    team.w1 = await create('戊一隊', [org['戊']]);
+    team.w2 = await create('戊二隊', [org['戊']]);
+    team.j = await create('己隊', [org['己']]);
+    await signUp(U.f, 'f@x.tw', { team_id: team.w1, invite_code: await codeOf('戊一隊', '戊') });
+    await signUp(U.g, 'g@x.tw', { team_id: team.w2, invite_code: await codeOf('戊二隊', '戊') });
+    await signUp(U.h, 'h@x.tw', { team_id: team.j, invite_code: await codeOf('己隊', '己') });
+    // 戊公司：一隊 5 男 2 女、二隊 3 男 2 女；己公司 1 女
+    let seq = 1;
+    const people = (prefix: string, m: number, f: number) => [
+      ...Array.from({ length: m }, (_, i) => row(`${prefix}男${i + 1}`, 'M', twId('M', seq++))),
+      ...Array.from({ length: f }, (_, i) => row(`${prefix}女${i + 1}`, 'F', twId('F', seq++))),
+    ];
+    await addMembers(U.f, team.w1, org['戊'], people('戊一', 5, 2));
+    await addMembers(U.g, team.w2, org['戊'], people('戊二', 3, 2));
+    await addMembers(U.h, team.j, org['己'], people('己', 0, 1));
+  });
+
+  it('窗口看得到自己公司各分隊的同仁（只有姓名、性別、分隊），其他公司窗口不行', async () => {
+    const r = await as<{ name: string; team_name: string }>(U.f, 'select * from org_roster($1)', [org['戊']]);
+    expect(r.rows).toHaveLength(12);
+    expect(new Set(r.rows.map((x) => x.team_name))).toEqual(new Set(['戊一隊', '戊二隊']));
+    expect(Object.keys(r.rows[0]).sort()).toEqual(['gender', 'member_id', 'name', 'team_id', 'team_name']);
+    await expect(as(U.h, 'select * from org_roster($1)', [org['戊']])).rejects.toThrow('無權限');
+    // 一般查詢仍只看得到自己綁定隊伍的隊員
+    expect((await as(U.f, 'select name from members')).rows).toHaveLength(7);
+  });
+
+  it('只有該公司窗口能組隊，且只能為以公司組隊的項目建立', async () => {
+    const insert = (user: string, orgName: string, eventId: string) =>
+      as<{ id: string }>(user, 'insert into org_squads (org_id, event_id) values ($1, $2) returning id', [org[orgName], eventId]);
+    await expect(insert(U.h, '戊', 'powerlifting')).rejects.toThrow('row-level security');
+    await expect(insert(U.f, '戊', 'fun1')).rejects.toThrow('不能以公司組隊');
+    squad.a = (await insert(U.f, '戊', 'powerlifting')).rows[0].id;
+    squad.b = (await insert(U.g, '戊', 'powerlifting')).rows[0].id;
+    expect((await as(U.h, 'select id from org_squads')).rows).toEqual([]);
+  });
+
+  it('可跨分隊選同公司同仁；不能選他公司、一人只能參加一隊、不超過上限', async () => {
+    for (const n of ['戊一男1', '戊一男2', '戊一男3', '戊一男4', '戊一男5', '戊二男1', '戊二男2', '戊二男3', '戊一女1', '戊二女1']) {
+      await addTo(U.f, squad.a, n);
+    }
+    await expect(addTo(U.f, squad.a, '己女1')).rejects.toThrow('同公司');
+    await expect(addTo(U.g, squad.b, '戊一男1')).rejects.toThrow('每人只能參加一隊');
+    await expect(addTo(U.f, squad.a, '戊一女2')).rejects.toThrow('最多 10 人');
+    // 同公司其他分隊的窗口也看得到這支隊伍
+    const r = await as<{ n: number }>(U.g, 'select count(*)::int n from org_squad_members where squad_id = $1', [squad.a]);
+    expect(r.rows[0].n).toBe(10);
+  });
+
+  it('送出時檢查人數與女性下限；送出後不可調整、刪除，取消送出後才能修改', async () => {
+    const minFemale = (await db.query<{ n: number }>(`select min_female n from events where id = 'powerlifting'`)).rows[0].n;
+    expect(minFemale).toBe(4);
+    await expect(submit(U.f, squad.a, true)).rejects.toThrow('女性至少 4 人');
+    await as(U.f, 'delete from org_squad_members where squad_id = $1 and member_id = any($2)', [
+      squad.a,
+      await ids(['戊二男2', '戊二男3']),
+    ]);
+    await addTo(U.f, squad.a, '戊一女2');
+    await addTo(U.f, squad.a, '戊二女2');
+    await submit(U.f, squad.a, true);
+    await expect(submit(U.g, squad.b, true)).rejects.toThrow('每隊需 10 人（目前 0 人）');
+
+    await expect(addTo(U.f, squad.a, '戊二男2')).rejects.toThrow('已送出');
+    const one = await memberId('戊一男1');
+    await expect(as(U.f, 'delete from org_squad_members where squad_id = $1 and member_id = $2', [squad.a, one])).rejects.toThrow('已送出');
+    await expect(as(U.f, 'delete from org_squads where id = $1', [squad.a])).rejects.toThrow('不可刪除');
+    // 隊員在已送出的隊伍中時，不能直接刪除該隊員
+    await expect(as(U.f, 'delete from members where id = $1', [one])).rejects.toThrow('已送出');
+
+    await submit(U.g, squad.a, false);
+    await as(U.f, 'delete from org_squad_members where squad_id = $1 and member_id = $2', [squad.a, one]);
+    const r = await db.query<{ submitted_at: string | null }>('select submitted_at from org_squads where id = $1', [squad.a]);
+    expect(r.rows[0].submitted_at).toBeNull();
+  });
+
+  it('健力不再以隊伍報名，也不計入每人項目數', async () => {
+    const id = await memberId('戊一男2');
+    await expect(as(U.f, `insert into event_entries (event_id, member_id) values ('powerlifting', $1)`, [id])).rejects.toThrow(
+      '改以公司為單位',
+    );
+    // 改版前留下的健力報名不刪除，但不計入每人上限（測試設定為每人 2 項）
+    await db.exec('alter table event_entries disable trigger event_entries_before_write');
+    await db.query(`insert into event_entries (event_id, member_id) values ('powerlifting', $1)`, [id]);
+    await db.exec('alter table event_entries enable trigger event_entries_before_write');
+    await as(U.f, `insert into event_entries (event_id, member_id) values ('fun1', $1), ('fun2', $1)`, [id]);
+  });
+
+  it('截止後窗口不可組隊或調整，管理員可以；影片連結只接受 http(s)', async () => {
+    await as(U.admin, 'update settings set registration_open = false where id = 1');
+    await expect(addTo(U.f, squad.a, '戊一男1')).rejects.toThrow('截止');
+    await addTo(U.admin, squad.a, '戊一男1');
+    await as(U.admin, 'update settings set registration_open = true where id = 1');
+
+    await as(U.admin, `update events set rules = '每人三次試舉', video_url = 'https://youtu.be/abc' where id = 'powerlifting'`);
+    await expect(as(U.admin, `update events set video_url = 'javascript:alert(1)' where id = 'fun1'`)).rejects.toThrow('video_url');
+    await as(U.f, `update events set rules = 'x' where id = 'fun1'`);
+    const r = await db.query<{ rules: string }>(`select rules from events where id = 'fun1'`);
+    expect(r.rows[0].rules).toBe('');
   });
 });

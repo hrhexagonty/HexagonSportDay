@@ -6,7 +6,9 @@ import type {
   Member,
   MemberPrivate,
   OrgName,
+  OrgSquad,
   Organization,
+  RosterMember,
   Settings,
   SportEvent,
   Team,
@@ -25,10 +27,12 @@ function translateError(error: PostgrestError): string {
     if (text.includes('teams_name')) return '隊名已被使用，請換一個';
     if (text.includes('organizations_name')) return '公司名稱已存在';
     if (text.includes('invite_code')) return '邀請碼已被使用，請換一組';
+    if (text.includes('org_squad_members')) return '此同仁已加入其他隊伍（每人只能參加一隊）';
     return '資料重複';
   }
   if (error.code === '23514' && text.includes('national_id')) return '身分證字號格式或檢查碼錯誤';
   if (error.code === '23514' && text.includes('invite_code')) return '邀請碼需為 6–20 位英文字母或數字';
+  if (error.code === '23514' && text.includes('video_url')) return '影片連結需以 http:// 或 https:// 開頭';
   if (error.code === '23503' && text.includes('members_team_org_fkey')) return '此公司未參與該隊伍';
   if (error.code === '42501') return '權限不足';
   // P0001 為 trigger / RPC 主動丟出的中文訊息，直接顯示
@@ -62,6 +66,15 @@ type MemberRow = Omit<Member, 'private'> & { member_private: (MemberPrivate & { 
 const MEMBER_SELECT =
   'id, team_id, org_id, name, gender, member_private(national_id, birthday, phone, shirt_size, diet, special_needs)';
 const toMember = ({ member_private, ...m }: MemberRow): Member => ({ ...m, private: member_private ?? null });
+
+type SquadRow = Omit<OrgSquad, 'member_ids'> & { org_squad_members: { member_id: string; created_at: string }[] | null };
+const SQUAD_SELECT = 'id, org_id, event_id, submitted_at, created_at, org_squad_members(member_id, created_at)';
+const toSquad = ({ org_squad_members, ...s }: SquadRow): OrgSquad => ({
+  ...s,
+  member_ids: [...(org_squad_members ?? [])]
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .map((x) => x.member_id),
+});
 
 export function createSupabaseApi(url: string, key: string): DataApi {
   const sb = createClient(url, key);
@@ -295,6 +308,54 @@ export function createSupabaseApi(url: string, key: string): DataApi {
 
     async purgePrivateData() {
       return run(sb.rpc('purge_private_data')) as Promise<number>;
+    },
+
+    async listOrgRoster(orgId) {
+      const rows = (await run(sb.rpc('org_roster', { p_org_id: orgId }))) as {
+        member_id: string;
+        name: string;
+        gender: RosterMember['gender'];
+        team_id: string;
+        team_name: string;
+      }[];
+      return (rows ?? []).map(({ member_id, ...r }) => ({ id: member_id, ...r }));
+    },
+
+    async listOrgSquads(orgId) {
+      let q = sb.from('org_squads').select(SQUAD_SELECT).order('created_at');
+      if (orgId) q = q.eq('org_id', orgId);
+      return ((await run(q)) as unknown as SquadRow[]).map(toSquad);
+    },
+
+    async createOrgSquad(orgId, eventId) {
+      const row = await run(sb.from('org_squads').insert({ org_id: orgId, event_id: eventId }).select(SQUAD_SELECT).single());
+      return toSquad(row as unknown as SquadRow);
+    },
+
+    async deleteOrgSquad(id) {
+      const rows = await run(sb.from('org_squads').delete().eq('id', id).select('id'));
+      if (!rows?.length) throw new Error('找不到隊伍或無權限刪除');
+    },
+
+    async addSquadMember(squadId, memberId) {
+      // event_id 由 DB trigger 依隊伍帶入
+      await run(sb.from('org_squad_members').insert({ squad_id: squadId, member_id: memberId }));
+    },
+
+    async removeSquadMember(squadId, memberId) {
+      await run(sb.from('org_squad_members').delete().eq('squad_id', squadId).eq('member_id', memberId));
+    },
+
+    async setSquadSubmitted(id, submitted) {
+      // 送出時間由 DB trigger 設定，並在送出時檢查人數與女性下限
+      const rows = await run(
+        sb
+          .from('org_squads')
+          .update({ submitted_at: submitted ? new Date().toISOString() : null })
+          .eq('id', id)
+          .select('id'),
+      );
+      if (!rows?.length) throw new Error('找不到隊伍或無權限');
     },
 
     async listEntries(filter) {

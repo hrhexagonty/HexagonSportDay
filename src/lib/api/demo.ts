@@ -2,19 +2,27 @@
 // 讓尚未建立 Supabase 專案時也能完整操作雛形；可見範圍規則見 ./types.ts 的 DataApi 說明
 import { INVITE_CODE_PATTERN, normalizeInviteCode, randomInviteCode } from '../inviteCode';
 import { cleanMemberInput, validateMemberInput } from '../member';
-import { checkAddEntry, checkAddMembers, checkWritable, entriesOfMembers } from '../rules';
+import {
+  checkAddEntry,
+  checkAddMembers,
+  checkAddSquadMember,
+  checkSubmitSquad,
+  checkWritable,
+  entriesOfMembers,
+  isCompanyEvent,
+} from '../rules';
 import type { Member, MemberInput, Team } from '../types';
 import { createSeed, type DemoDb } from './demoSeed';
 import type { DataApi, JoinInput } from './types';
 
-const STORAGE_KEY = 'hexagon-sportday-demo-v5';
+const STORAGE_KEY = 'hexagon-sportday-demo-v6';
 
 function load(): DemoDb {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb;
-      if (parsed.version === 5) return parsed;
+      if (parsed.version === 6) return parsed;
     }
   } catch {
     // localStorage 不可用或資料損毀時改用初始資料
@@ -69,6 +77,14 @@ export function createDemoApi(): DataApi {
   const canSeeMember = (m: Member) => !!teamOf(m) && canAccessTeam(teamOf(m)!);
   const canSeePrivate = (m: Member) => isAdmin() || isTeamOrgContact(m.team_id, m.org_id);
   const view = (m: Member): Member => ({ ...copy(m), private: canSeePrivate(m) ? copy(m.private) : null });
+  /** 管理員，或該公司（任一隊）的窗口：可看同仁名單、管理公司組隊 */
+  const canManageOrg = (orgId: string) => isAdmin() || myContacts().some((c) => c.org_id === orgId);
+  const getSquad = (id: string) => {
+    const sq = db.squads.find((x) => x.id === id);
+    if (!sq || !canManageOrg(sq.org_id)) return fail('找不到隊伍或無權限');
+    return sq;
+  };
+  const inSubmittedSquad = (memberId: string) => db.squads.some((s) => s.submitted_at && s.member_ids.includes(memberId));
 
   const getTeam = (id: string): Team => {
     const t = db.teams.find((x) => x.id === id);
@@ -131,6 +147,7 @@ export function createDemoApi(): DataApi {
   function removeMembers(predicate: (m: Member) => boolean) {
     const gone = new Set(db.members.filter(predicate).map((m) => m.id));
     db.entries = db.entries.filter((e) => !gone.has(e.member_id));
+    db.squads.forEach((s) => (s.member_ids = s.member_ids.filter((id) => !gone.has(id))));
     db.members = db.members.filter((m) => !gone.has(m.id));
   }
 
@@ -241,6 +258,7 @@ export function createDemoApi(): DataApi {
       const ev = db.events.find((e) => e.id === id) ?? fail('找不到項目');
       const next = { ...ev, ...patch };
       if (next.max_per_team < next.min_per_team) fail('人數上限不可小於下限');
+      if (next.video_url && !/^https?:\/\/\S+$/i.test(next.video_url)) fail('影片連結需以 http:// 或 https:// 開頭');
       Object.assign(ev, patch);
       commit();
     },
@@ -277,6 +295,7 @@ export function createDemoApi(): DataApi {
       db.teams.forEach((t) => (t.org_ids = t.org_ids.filter((o) => o !== id)));
       db.invites = db.invites.filter((i) => i.org_id !== id);
       db.contacts = db.contacts.filter((c) => c.org_id !== id);
+      db.squads = db.squads.filter((s) => s.org_id !== id);
       db.organizations = db.organizations.filter((o) => o.id !== id);
       commit();
     },
@@ -395,6 +414,7 @@ export function createDemoApi(): DataApi {
     async deleteMember(id) {
       getWritableMember(id);
       requireWritable();
+      if (!isAdmin() && inSubmittedSquad(id)) fail('此同仁在已送出的隊伍中，請先取消送出再調整');
       removeMembers((m) => m.id === id);
       commit();
     },
@@ -405,6 +425,92 @@ export function createDemoApi(): DataApi {
       db.members.forEach((m) => (m.private = null));
       commit();
       return n;
+    },
+
+    async listOrgRoster(orgId) {
+      requireUser();
+      if (!canManageOrg(orgId)) fail('無權限檢視此公司的同仁');
+      return db.members
+        .filter((m) => m.org_id === orgId)
+        .map((m) => ({ id: m.id, name: m.name, gender: m.gender, team_id: m.team_id, team_name: teamOf(m)?.name ?? '' }))
+        .sort((a, b) => a.team_name.localeCompare(b.team_name, 'zh-TW'));
+    },
+
+    async listOrgSquads(orgId) {
+      requireUser();
+      return copy(
+        db.squads
+          .filter((s) => canManageOrg(s.org_id) && (!orgId || s.org_id === orgId))
+          .sort((a, b) => a.created_at.localeCompare(b.created_at)),
+      );
+    },
+
+    async createOrgSquad(orgId, eventId) {
+      requireUser();
+      if (!canManageOrg(orgId)) fail('權限不足');
+      requireWritable();
+      const event = db.events.find((e) => e.id === eventId) ?? fail('找不到項目');
+      if (!isCompanyEvent(event)) fail(`「${event.name}」以隊伍為單位報名，不能以公司組隊`);
+      const squad = {
+        id: crypto.randomUUID(),
+        org_id: orgId,
+        event_id: eventId,
+        submitted_at: null,
+        created_at: new Date().toISOString(),
+        member_ids: [],
+      };
+      db.squads.push(squad);
+      commit();
+      return copy(squad);
+    },
+
+    async deleteOrgSquad(id) {
+      const sq = getSquad(id);
+      requireWritable();
+      if (sq.submitted_at && !isAdmin()) fail('已送出的隊伍不可刪除，請先取消送出');
+      db.squads = db.squads.filter((s) => s.id !== id);
+      commit();
+    },
+
+    async addSquadMember(squadId, memberId) {
+      const sq = getSquad(squadId);
+      const member = db.members.find((m) => m.id === memberId);
+      if (!member || member.org_id !== sq.org_id) return fail('只能選擇同公司的同仁');
+      const event = db.events.find((e) => e.id === sq.event_id) ?? fail('找不到項目');
+      const msg = checkAddSquadMember({
+        settings: db.settings,
+        event,
+        squad: sq,
+        member,
+        eventSquads: db.squads.filter((s) => s.event_id === sq.event_id),
+        isAdmin: isAdmin(),
+      });
+      if (msg) fail(msg);
+      sq.member_ids.push(memberId);
+      commit();
+    },
+
+    async removeSquadMember(squadId, memberId) {
+      const sq = getSquad(squadId);
+      requireWritable();
+      if (sq.submitted_at && !isAdmin()) fail('此同仁在已送出的隊伍中，請先取消送出再調整');
+      sq.member_ids = sq.member_ids.filter((id) => id !== memberId);
+      commit();
+    },
+
+    async setSquadSubmitted(id, submitted) {
+      const sq = getSquad(id);
+      requireWritable();
+      if (submitted && !sq.submitted_at) {
+        const event = db.events.find((e) => e.id === sq.event_id) ?? fail('找不到項目');
+        const genders = sq.member_ids.map((mid) => db.members.find((m) => m.id === mid)?.gender ?? 'M');
+        const msg = checkSubmitSquad(event, genders);
+        if (msg) fail(msg);
+        sq.submitted_at = new Date().toISOString();
+      } else if (!submitted) {
+        sq.submitted_at = null;
+      }
+      commit();
     },
 
     async listEntries(filter) {
@@ -423,7 +529,10 @@ export function createDemoApi(): DataApi {
         event,
         member,
         teamEntries: entriesOfMembers(db.entries, teamMembers),
-        memberEntries: db.entries.filter((e) => e.member_id === member.id),
+        // 以公司組隊的項目不計入每人項目數
+        memberEntries: db.entries.filter(
+          (e) => e.member_id === member.id && !db.events.some((ev) => ev.id === e.event_id && isCompanyEvent(ev)),
+        ),
         isAdmin: isAdmin(),
       });
       if (msg) fail(msg);

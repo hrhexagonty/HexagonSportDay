@@ -1,4 +1,14 @@
-import type { EventEntry, Member, Organization, Settings, SportEvent, Team, TeamContact, TeamInvite } from '../../lib/types';
+import type {
+  EventEntry,
+  Member,
+  OrgSquad,
+  Organization,
+  Settings,
+  SportEvent,
+  Team,
+  TeamContact,
+  TeamInvite,
+} from '../../lib/types';
 
 export interface AdminData {
   settings: Settings;
@@ -9,4 +19,6 @@ export interface AdminData {
   contacts: TeamContact[];
   members: Member[];
   entries: EventEntry[];
+  /** 公司組隊（健力） */
+  squads: OrgSquad[];
 }

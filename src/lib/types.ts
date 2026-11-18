@@ -96,6 +96,30 @@ export interface SportEvent {
   max_per_team: number;
   min_female: number;
   sort_order: number;
+  /** 競賽規則說明（純文字，保留換行） */
+  rules: string;
+  /** 示範影片連結（http/https；空字串 = 無） */
+  video_url: string;
+}
+
+/** 公司同仁（跨分隊，只有姓名、性別與分隊，不含個資） */
+export interface RosterMember {
+  id: string;
+  name: string;
+  gender: Gender;
+  team_id: string;
+  team_name: string;
+}
+
+/** 公司組隊（健力）；submitted_at 為 null = 草稿 */
+export interface OrgSquad {
+  id: string;
+  org_id: string;
+  event_id: string;
+  submitted_at: string | null;
+  created_at: string;
+  /** 依加入順序 */
+  member_ids: string[];
 }
 
 /** 項目報名；隊伍由 member 推得 */
@@ -110,4 +134,7 @@ export type TeamInput = Pick<Team, 'name' | 'captain_name' | 'captain_phone'>;
 /** 隊伍可修改欄位；name、contact_limit 只有管理員能改 */
 export type TeamPatch = Partial<TeamInput & Pick<Team, 'contact_limit'>>;
 export type MemberInput = Pick<Member, 'name' | 'gender'> & MemberPrivate;
-export type EventInput = Pick<SportEvent, 'name' | 'description' | 'min_per_team' | 'max_per_team' | 'min_female'>;
+export type EventInput = Pick<
+  SportEvent,
+  'name' | 'description' | 'min_per_team' | 'max_per_team' | 'min_female' | 'rules' | 'video_url'
+>;

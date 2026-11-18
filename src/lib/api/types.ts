@@ -5,8 +5,10 @@ import type {
   MemberInput,
   OrgInput,
   OrgName,
+  OrgSquad,
   Organization,
   Role,
+  RosterMember,
   Settings,
   SportEvent,
   Team,
@@ -58,6 +60,7 @@ export interface InviteInfo {
  * - 隊員公開資料（姓名、性別、所屬公司）：同隊窗口都看得到
  * - 隊員個資 Member.private：只有「該隊 × 該公司」的窗口與管理員看得到，其餘為 null
  * - 公司完整資料、邀請碼、窗口名單：只有管理員
+ * - 公司同仁名單（跨分隊，只有姓名、性別）與公司組隊：該公司（任一隊）的窗口與管理員
  */
 export interface DataApi {
   readonly mode: 'supabase' | 'demo';
@@ -123,6 +126,20 @@ export interface DataApi {
   deleteMember(id: string): Promise<void>;
   /** 活動結束後清除所有隊員個資（僅管理員），回傳筆數 */
   purgePrivateData(): Promise<number>;
+
+  // ---- 公司組隊（健力；category = 'powerlifting' 的項目） ----
+  /** 公司同仁名單（跨分隊、不含個資） */
+  listOrgRoster(orgId: string): Promise<RosterMember[]>;
+  /** 公司隊伍；不指定公司 = 可見的全部（管理員為全部） */
+  listOrgSquads(orgId?: string): Promise<OrgSquad[]>;
+  /** 建立草稿隊伍 */
+  createOrgSquad(orgId: string, eventId: string): Promise<OrgSquad>;
+  /** 刪除隊伍（已送出的需先取消送出） */
+  deleteOrgSquad(id: string): Promise<void>;
+  addSquadMember(squadId: string, memberId: string): Promise<void>;
+  removeSquadMember(squadId: string, memberId: string): Promise<void>;
+  /** 送出（檢查人數與女性下限）或取消送出 */
+  setSquadSubmitted(id: string, submitted: boolean): Promise<void>;
 
   // ---- 項目報名 ----
   listEntries(filter?: { teamId?: string }): Promise<EventEntry[]>;

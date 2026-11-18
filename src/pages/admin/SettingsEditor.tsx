@@ -3,8 +3,9 @@ import { useToast } from '../../components/Toast';
 import { Badge, Field } from '../../components/ui';
 import { api } from '../../lib/api';
 import { blankToNull, fromLocalInput, toLocalInput } from '../../lib/format';
-import { registrationOpen, sortEvents } from '../../lib/rules';
+import { isCompanyEvent, registrationOpen, sortEvents } from '../../lib/rules';
 import { CATEGORY_LABEL, type SportEvent } from '../../lib/types';
+import { isValidVideoUrl } from '../../lib/video';
 import type { AdminData } from './types';
 
 function SettingsForm({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
@@ -109,13 +110,17 @@ function EventRow({ event, onChanged }: { event: SportEvent; onChanged: () => vo
     min: String(event.min_per_team),
     max: String(event.max_per_team),
     female: String(event.min_female),
+    rules: event.rules,
+    video: event.video_url,
   });
   const dirty =
     f.name !== event.name ||
     f.description !== event.description ||
     Number(f.min) !== event.min_per_team ||
     Number(f.max) !== event.max_per_team ||
-    Number(f.female) !== event.min_female;
+    Number(f.female) !== event.min_female ||
+    f.rules !== event.rules ||
+    f.video !== event.video_url;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -125,6 +130,11 @@ function EventRow({ event, onChanged }: { event: SportEvent; onChanged: () => vo
       toast.error('人數上限不可小於下限');
       return;
     }
+    const video = f.video.trim();
+    if (!isValidVideoUrl(video)) {
+      toast.error('影片連結需以 http:// 或 https:// 開頭');
+      return;
+    }
     try {
       await api.updateEvent(event.id, {
         name: f.name.trim(),
@@ -132,6 +142,8 @@ function EventRow({ event, onChanged }: { event: SportEvent; onChanged: () => vo
         min_per_team: min,
         max_per_team: max,
         min_female: Number(f.female),
+        rules: f.rules.trim(),
+        video_url: video,
       });
       toast.ok(`「${f.name}」已更新`);
       onChanged();
@@ -163,6 +175,27 @@ function EventRow({ event, onChanged }: { event: SportEvent; onChanged: () => vo
         <Field label="女性至少">
           <input type="number" min={0} value={f.female} onChange={(e) => setF({ ...f, female: e.target.value })} />
         </Field>
+        {isCompanyEvent(event) && <span className="muted small">以公司為單位組隊：「每隊」指每支公司隊伍</span>}
+      </div>
+      <div className="event-row-rules">
+        <Field label="競賽規則" hint="顯示於前台「競賽規則」，保留換行">
+          <textarea
+            rows={4}
+            value={f.rules}
+            onChange={(e) => setF({ ...f, rules: e.target.value })}
+            placeholder={'1. 比賽方式…\n2. 計分方式…'}
+          />
+        </Field>
+        <Field label="示範影片連結" hint="YouTube 連結會直接內嵌播放；其他連結（例如雲端硬碟）以新分頁開啟">
+          <input
+            type="url"
+            value={f.video}
+            onChange={(e) => setF({ ...f, video: e.target.value })}
+            placeholder="https://www.youtube.com/watch?v=…"
+          />
+        </Field>
+      </div>
+      <div className="actions">
         <button className="btn btn-primary btn-sm" disabled={!dirty}>
           儲存
         </button>
@@ -177,8 +210,10 @@ export default function SettingsEditor({ data, onChanged }: { data: AdminData; o
       <SettingsForm data={data} onChanged={onChanged} />
       <section className="card stack">
         <div>
-          <h2>比賽項目規則</h2>
-          <p className="muted small">每隊下限 = 上限 代表固定人數；下限為 0 代表選填項目。修改後所有隊伍的檢核結果會立即更新。</p>
+          <h2>比賽項目、競賽規則與示範影片</h2>
+          <p className="muted small">
+            每隊下限 = 上限 代表固定人數；下限為 0 代表選填項目。修改後所有隊伍的檢核結果會立即更新；競賽規則與示範影片會顯示在前台「競賽規則」。
+          </p>
         </div>
         {sortEvents(data.events).map((ev) => (
           <EventRow key={`${ev.id}-${JSON.stringify(ev)}`} event={ev} onChanged={onChanged} />

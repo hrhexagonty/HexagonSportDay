@@ -118,10 +118,16 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/" end>
               活動資訊
             </NavLink>
+            {session && <NavLink to="/rules">競賽規則</NavLink>}
             {session && !isAdmin && session.teams.length > 0 && (
-              <NavLink to="/org" className={activeIf(onTeamPage)}>
-                我的隊伍
-              </NavLink>
+              <>
+                <NavLink to="/org" className={activeIf(onTeamPage)}>
+                  我的隊伍
+                </NavLink>
+                <NavLink to="/company">
+                  我的公司<span className="nav-sub">（健力報名）</span>
+                </NavLink>
+              </>
             )}
             {isAdmin && (
               <NavLink to="/admin" className={activeIf(onTeamPage)}>

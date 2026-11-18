@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   checkAddEntry,
   checkAddMembers,
+  checkAddSquadMember,
+  checkSubmitSquad,
+  evaluateSquad,
   evaluateEvent,
   evaluateTeam,
   isMergedTeam,
   registrationOpen,
 } from './rules';
-import type { EventEntry, Gender, Member, Settings, SportEvent } from './types';
+import type { EventEntry, Gender, Member, OrgSquad, Settings, SportEvent } from './types';
 
 const settings: Settings = {
   event_title: '測試運動會',
@@ -30,6 +33,8 @@ const relay: SportEvent = {
   max_per_team: 3,
   min_female: 1,
   sort_order: 1,
+  rules: '',
+  video_url: '',
 };
 
 const optional: SportEvent = { ...relay, id: 'opt', name: '選填項目', min_per_team: 0, max_per_team: 2, min_female: 1, sort_order: 2 };
@@ -131,5 +136,58 @@ describe('聯隊', () => {
     expect(isMergedTeam({ org_ids: ['A'] })).toBe(false);
     expect(isMergedTeam({ org_ids: [] })).toBe(false);
     expect(isMergedTeam({ org_ids: ['A', 'C', 'D'] })).toBe(true);
+  });
+});
+
+describe('公司組隊（健力）', () => {
+  const pl: SportEvent = {
+    ...relay,
+    id: 'pl',
+    name: '健力比賽',
+    category: 'powerlifting',
+    min_per_team: 4,
+    max_per_team: 4,
+    min_female: 2,
+  };
+  const squad = (id: string, member_ids: string[], submitted = false): OrgSquad => ({
+    id,
+    org_id: 'o1',
+    event_id: 'pl',
+    submitted_at: submitted ? '2027-01-01T00:00:00Z' : null,
+    created_at: '2027-01-01T00:00:00Z',
+    member_ids,
+  });
+
+  it('健力不能以隊伍報名', () => {
+    const msg = checkAddEntry({ settings, event: pl, member: member('a', 'M'), teamEntries: [], memberEntries: [], isAdmin: false });
+    expect(msg).toContain('改以公司為單位');
+  });
+
+  it('健力報名不計入每人項目數', () => {
+    const members = [member('a', 'M'), member('b', 'F'), member('c', 'F'), member('d', 'M')];
+    const entries = [entry('fun1', 'a'), entry('opt', 'a'), entry('pl', 'a')];
+    const s = evaluateTeam(settings, [relay, optional, pl], members, entries);
+    expect(s.loadIssues).toEqual([]);
+  });
+
+  it('送出前檢查人數與女性下限', () => {
+    expect(checkSubmitSquad(pl, ['M', 'M', 'F'])).toContain('每隊需 4 人（目前 3 人）');
+    expect(checkSubmitSquad(pl, ['M', 'M', 'M', 'F'])).toContain('女性至少 2 人');
+    expect(checkSubmitSquad(pl, ['M', 'M', 'F', 'F'])).toBeNull();
+    expect(evaluateSquad(pl, ['M', 'F']).issues.map((i) => i.message)).toEqual([
+      '尚缺 2 人（每隊 4 人）',
+      '女性至少 2 人（目前 1 人）',
+    ]);
+  });
+
+  it('一人只能一隊、已送出不可調整、不超過上限', () => {
+    const a = { id: 'a', name: '隊員a' };
+    const base = { settings, event: pl, member: a, isAdmin: false };
+    const s1 = squad('s1', []);
+    const s2 = squad('s2', ['a']);
+    expect(checkAddSquadMember({ ...base, squad: s1, eventSquads: [s1, s2] })).toContain('每人只能參加一隊');
+    expect(checkAddSquadMember({ ...base, squad: squad('s3', [], true), eventSquads: [] })).toContain('取消送出');
+    expect(checkAddSquadMember({ ...base, squad: squad('s4', ['b', 'c', 'd', 'e']), eventSquads: [] })).toContain('最多 4 人');
+    expect(checkAddSquadMember({ ...base, squad: s1, eventSquads: [s1] })).toBeNull();
   });
 });

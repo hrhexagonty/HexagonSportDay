@@ -6,6 +6,7 @@ import {
   type EventEntry,
   type Gender,
   type Member,
+  type OrgSquad,
   type Organization,
   type Role,
   type Settings,
@@ -30,7 +31,7 @@ export interface DemoContact {
 }
 
 export interface DemoDb {
-  version: 5;
+  version: 6;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
@@ -40,18 +41,30 @@ export interface DemoDb {
   members: Member[];
   events: SportEvent[];
   entries: EventEntry[];
+  /** 公司組隊（健力），對應 org_squads + org_squad_members */
+  squads: OrgSquad[];
   users: DemoUser[];
   sessionUserId: string | null;
 }
 
 /** 與 supabase/migrations 初始資料相同，修改時需同步 */
 export const DEMO_EVENTS: SportEvent[] = [
-  { id: 'fun1', name: '同心鼓顛球', category: 'fun', description: '全隊拉繩控制同心鼓，合力讓球在鼓面上連續彈跳。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 1 },
-  { id: 'fun2', name: '四關障礙接力', category: 'fun', description: '隊員分棒接力，依序完成四個障礙關卡。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 2 },
-  { id: 'fun3', name: '嗨ROX競賽', category: 'fun', description: '結合跑步與多項體能關卡的團隊挑戰。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 3 },
-  { id: 'fun4', name: '毛毛蟲大隊接力', category: 'fun', description: '隊員組成毛毛蟲隊形同步前進，完成大隊接力。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 4 },
-  { id: 'powerlifting', name: '健力比賽', category: 'powerlifting', description: '深蹲、臥推、硬舉三項，每隊 10 人參賽。', min_per_team: 10, max_per_team: 10, min_female: 4, sort_order: 5 },
+  { id: 'fun1', name: '同心鼓顛球', category: 'fun', description: '全隊拉繩控制同心鼓，合力讓球在鼓面上連續彈跳。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 1, rules: '', video_url: '' },
+  { id: 'fun2', name: '四關障礙接力', category: 'fun', description: '隊員分棒接力，依序完成四個障礙關卡。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 2, rules: '', video_url: '' },
+  { id: 'fun3', name: '嗨ROX競賽', category: 'fun', description: '結合跑步與多項體能關卡的團隊挑戰。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 3, rules: '', video_url: '' },
+  { id: 'fun4', name: '毛毛蟲大隊接力', category: 'fun', description: '隊員組成毛毛蟲隊形同步前進，完成大隊接力。', min_per_team: 10, max_per_team: 10, min_female: 0, sort_order: 4, rules: '', video_url: '' },
+  { id: 'powerlifting', name: '健力比賽', category: 'powerlifting', description: '深蹲、臥推、硬舉三項，每隊 10 人參賽。', min_per_team: 10, max_per_team: 10, min_female: 4, sort_order: 5, rules: '', video_url: '' },
 ];
+
+/** 展示用的範例競賽規則（正式環境由管理員於後台填寫） */
+const DEMO_RULES: Record<string, string> = {
+  fun1: '1. 每隊 10 人，每人各拉一條繩，不可用手直接碰觸鼓面或球。\n2. 計時 2 分鐘，以球在鼓面上連續彈跳的最高次數計分。\n3. 球落地即中斷，重新開始計算連續次數。',
+  fun2: '1. 每隊 10 人分棒接力，依序通過四個障礙關卡。\n2. 漏關或關卡未完成者需回到該關重來。\n3. 以最後一棒抵達終點的時間計算成績。',
+  fun3: '1. 跑步與體能關卡交替進行，每位隊員至少完成一個關卡。\n2. 關卡動作不標準由裁判判定加罰次數。\n3. 以全隊完成時間排名。',
+  fun4: '1. 全隊 10 人跨坐毛毛蟲道具同步前進。\n2. 隊員雙腳需保持在道具內，中途脫隊需回到起點重來。\n3. 以抵達終點的時間計算成績。',
+  powerlifting:
+    '1. 以公司為單位組隊，每隊 10 人且女性需達規定人數；同一位同仁只能參加一隊。\n2. 比賽項目為深蹲、臥推、硬舉，每項三次試舉，取最佳成績。\n3. 依體重係數換算後的總和計算團體成績。',
+};
 
 export const DEMO_ACCOUNTS = {
   org: { email: 'org@demo.local', password: 'demo', label: '隊伍窗口（六角科技，管理 2 隊）' },
@@ -202,8 +215,24 @@ export function createSeed(): DemoDb {
     }
   });
 
+  // 範例：六角科技已建立一支健力隊伍草稿（跨分隊選人）
+  const techMembers = members.filter((m) => m.org_id === 'org-1');
+  const squads: OrgSquad[] = [
+    {
+      id: 'squad-1',
+      org_id: 'org-1',
+      event_id: 'powerlifting',
+      submitted_at: null,
+      created_at: '2026-11-15T01:00:00.000Z',
+      member_ids: [
+        ...techMembers.filter((m) => m.gender === 'F').slice(0, 2),
+        ...techMembers.filter((m) => m.gender === 'M').slice(-4),
+      ].map((m) => m.id),
+    },
+  ];
+
   return {
-    version: 5,
+    version: 6,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',
@@ -224,8 +253,9 @@ export function createSeed(): DemoDb {
       { user_id: 'u-energy', team_id: 'team-9', org_id: 'org-7', created_at: '2026-11-18T02:00:00.000Z' },
     ],
     members,
-    events: DEMO_EVENTS.map((e) => ({ ...e })),
+    events: DEMO_EVENTS.map((e) => ({ ...e, rules: DEMO_RULES[e.id] ?? '' })),
     entries,
+    squads,
     users: [
       { id: 'u-admin', email: DEMO_ACCOUNTS.admin.email, password: 'demo', role: 'super_admin' },
       { id: 'u-org', email: DEMO_ACCOUNTS.org.email, password: 'demo', role: 'org_admin' },
