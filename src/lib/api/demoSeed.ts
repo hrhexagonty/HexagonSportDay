@@ -6,6 +6,7 @@ import {
   type EventEntry,
   type Gender,
   type Member,
+  type MemberPrivate,
   type OrgSquad,
   type Organization,
   type Role,
@@ -31,7 +32,7 @@ export interface DemoContact {
 }
 
 export interface DemoDb {
-  version: 6;
+  version: 7;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
@@ -167,22 +168,25 @@ export function createSeed(): DemoDb {
     orgIdxs.forEach((orgIdx, k) => {
       for (let i = 0; i < sizes[k]; i++) {
         const gender: Gender = rng() < 0.45 ? 'F' : 'M';
-        const diet = fakeDiet();
+        const name = pick(SURNAMES) + pick(GIVEN) + pick(GIVEN);
+        const priv: MemberPrivate = {
+          national_id: fakeId(gender),
+          birthday: `${int(1966, 2003)}-${String(int(1, 12)).padStart(2, '0')}-${String(int(1, 28)).padStart(2, '0')}`,
+          phone: `09${String(Math.floor(rng() * 1e8)).padStart(8, '0')}`,
+          shirt_size: pick(SHIRT_SIZES.slice(1, 6)),
+          diet: fakeDiet(),
+          special_needs: rng() < 0.06 ? pick(NEEDS) : null,
+        };
+        // 展示「資料待補」：部分隊員只先填了姓名與性別（先產生完整資料再清空，不影響亂數序列）
+        if ((teamMembers.length + ti) % 11 === 5) Object.assign(priv, { national_id: null, birthday: null, diet: null });
         teamMembers.push({
           id: `m-${ti + 1}-${teamMembers.length + 1}`,
           team_id: team.id,
           org_id: organizations[orgIdx].id,
-          name: pick(SURNAMES) + pick(GIVEN) + pick(GIVEN),
+          name,
           gender,
-          diet,
-          private: {
-            national_id: fakeId(gender),
-            birthday: `${int(1966, 2003)}-${String(int(1, 12)).padStart(2, '0')}-${String(int(1, 28)).padStart(2, '0')}`,
-            phone: `09${String(Math.floor(rng() * 1e8)).padStart(8, '0')}`,
-            shirt_size: pick(SHIRT_SIZES.slice(1, 6)),
-            diet,
-            special_needs: rng() < 0.06 ? pick(NEEDS) : null,
-          },
+          diet: priv.diet,
+          private: priv,
         });
       }
     });
@@ -234,7 +238,7 @@ export function createSeed(): DemoDb {
   ];
 
   return {
-    version: 6,
+    version: 7,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',

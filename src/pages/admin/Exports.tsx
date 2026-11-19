@@ -24,7 +24,8 @@ function buildReports(data: AdminData) {
       a.name.localeCompare(b.name, 'zh-TW'),
   );
   const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'));
-  const withPrivate = members.filter((m) => m.private).length;
+  // 保險需要證號與生日；尚未補齊的隊員仍列出（欄位留空）
+  const insured = members.filter((m) => m.private?.national_id && m.private.birthday).length;
 
   const roster = (): Cell[][] => {
     const byMember = new Map<string, string[]>();
@@ -40,7 +41,7 @@ function buildReports(data: AdminData) {
         m.private?.birthday,
         m.private?.phone,
         m.private?.shirt_size,
-        m.private ? DIET_LABEL[m.private.diet] : null,
+        m.private?.diet ? DIET_LABEL[m.private.diet] : null,
         m.private?.special_needs,
         (byMember.get(m.id) ?? []).join('、'),
       ]),
@@ -70,7 +71,7 @@ function buildReports(data: AdminData) {
   const meals = (): Cell[][] => {
     const count = (list: Member[]) => [
       ...DIETS.map((d) => list.filter((m) => m.private?.diet === d).length),
-      list.filter((m) => !m.private).length,
+      list.filter((m) => !m.private?.diet).length,
       list.length,
     ];
     return [
@@ -103,7 +104,7 @@ function buildReports(data: AdminData) {
 
   return [
     { key: 'roster', title: '隊員總名單', desc: '所有隊員完整資料（含身分證字號、生日、用餐與特殊需求）與報名項目。', count: `${members.length} 人`, build: roster, sensitive: true },
-    { key: 'insurance', title: '保險名冊', desc: '姓名、身分證字號、生日，供投保活動保險使用。', count: `${withPrivate} 人`, build: insurance, sensitive: true },
+    { key: 'insurance', title: '保險名冊', desc: '姓名、身分證字號、生日，供投保活動保險使用；尚未補齊的隊員欄位留空。', count: `${insured} / ${members.length} 人已填`, build: insurance, sensitive: true },
     { key: 'signups', title: '項目報名名單', desc: '依項目列出各隊選手，可直接用於檢錄。', count: `${entries.length} 筆`, build: signups, sensitive: false },
     { key: 'meals', title: '用餐統計', desc: '各隊葷食 / 蛋奶素 / 全素份數，供訂餐使用。', count: `${teams.length} 隊`, build: meals, sensitive: false },
     { key: 'needs', title: '特殊需求名單', desc: '有填寫特殊需求（過敏、無障礙等）的隊員，供場地與餐點安排。', count: `${needs.length} 人`, build: specialNeeds, sensitive: true },

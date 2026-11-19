@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkTwId, maskId, withCheckDigit } from './idNumber';
-import { ageOn, normalizeShirtSize, parseBirthday, validateMemberInput } from './member';
+import { ageOn, cleanMemberInput, missingFields, normalizeShirtSize, parseBirthday, validateMemberInput } from './member';
 import type { MemberInput } from './types';
 
 describe('checkTwId', () => {
@@ -68,6 +68,22 @@ describe('validateMemberInput', () => {
   });
   it('生日不可在未來', () => {
     expect(validateMemberInput({ ...ok, birthday: '2027-01-01' }, now)).toContain('生日');
+  });
+  it('只填姓名與性別也通過；選填欄位有填仍檢查', () => {
+    const bare = cleanMemberInput({ ...ok, national_id: ' ', birthday: '', diet: null });
+    expect(bare).toMatchObject({ national_id: null, birthday: null, diet: null });
+    expect(validateMemberInput(bare, now)).toBeNull();
+    expect(validateMemberInput({ ...bare, name: ' ' }, now)).toBe('請填寫姓名');
+    expect(validateMemberInput({ ...bare, national_id: 'A123456788' }, now)).toContain('檢查碼');
+    expect(validateMemberInput({ ...bare, birthday: '2027-01-01' }, now)).toContain('生日');
+  });
+});
+
+describe('missingFields', () => {
+  it('列出之後需補齊的欄位（證號、生日、用餐）', () => {
+    const p = { national_id: null, birthday: '1990-05-12', diet: null, phone: null, shirt_size: null, special_needs: null };
+    expect(missingFields(p)).toEqual(['身分證字號', '用餐習慣']);
+    expect(missingFields({ ...p, national_id: 'A123456789', diet: 'meat' })).toEqual([]);
   });
 });
 

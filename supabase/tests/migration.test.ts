@@ -313,6 +313,45 @@ describe('隊員與個資', () => {
     const del = await as(U.c, 'delete from members where id = $1', [await memberId('乙二')]);
     expect(del.affectedRows).toBe(0);
   });
+
+  it('只填姓名與性別也能送出，證號、生日、用餐可之後再補；有填仍照常檢查', async () => {
+    const blank = { national_id: '', birthday: '', diet: '', phone: '', shirt_size: '', special_needs: '' };
+    await addMembers(U.a, team.a2, org['甲'], [{ name: '甲二二', gender: 'F' }, { name: '甲二三', gender: 'M', ...blank }]);
+    const priv = async () =>
+      (
+        await as<{ name: string; national_id: string | null; birthday: string | null; diet: string | null }>(
+          U.a,
+          `select m.name, p.national_id, p.birthday::text, p.diet from members m join member_private p on p.member_id = m.id
+            where m.name in ('甲二二', '甲二三') order by m.name`,
+        )
+      ).rows;
+    // 未填欄位存成 null；兩位都沒填證號也不會觸發 unique
+    expect(await priv()).toEqual([
+      { name: '甲二三', national_id: null, birthday: null, diet: null },
+      { name: '甲二二', national_id: null, birthday: null, diet: null },
+    ]);
+    // 用餐未填時，聯隊 / 同隊看到的也是 null
+    const diets = await as<{ diet: string | null }>(U.a, 'select diet from member_diets($1) where member_id = $2', [
+      team.a2,
+      await memberId('甲二二'),
+    ]);
+    expect(diets.rows).toEqual([{ diet: null }]);
+
+    // 之後補資料：證號仍檢查性別一致、全活動唯一，生日不可在未來
+    const id = await memberId('甲二二');
+    const patch = (data: object) => as(U.a, 'select update_member($1, $2)', [id, JSON.stringify({ name: '甲二二', gender: 'F', ...data })]);
+    await expect(patch({ national_id: 'B200000004' })).rejects.toThrow('已報名');
+    await expect(patch({ national_id: twId('M', 901) })).rejects.toThrow('不符');
+    await expect(patch({ national_id: 'B200000005' })).rejects.toThrow('national_id');
+    await expect(patch({ birthday: '2999-01-01' })).rejects.toThrow('生日');
+    await expect(patch({ diet: 'fish' })).rejects.toThrow('diet');
+    await patch({ national_id: ` ${twId('F', 901).toLowerCase()} `, birthday: '1991-02-03', diet: 'vegan' });
+    expect((await priv())[1]).toEqual({ name: '甲二二', national_id: twId('F', 901), birthday: '1991-02-03', diet: 'vegan' });
+    // 也可以改回未填；直接寫入空白證號視為未填
+    await patch({ birthday: '1991-02-03' });
+    await as(U.a, `update member_private set national_id = '  ', diet = '' where member_id = $1`, [id]);
+    expect((await priv())[1]).toEqual({ name: '甲二二', national_id: null, birthday: '1991-02-03', diet: null });
+  });
 });
 
 describe('項目報名', () => {
@@ -351,7 +390,7 @@ describe('截止與管理員操作', () => {
   it('只有管理員能清除個資', async () => {
     await expect(as(U.b, 'select purge_private_data()')).rejects.toThrow('權限不足');
     const r = await as<{ n: number }>(U.admin, 'select purge_private_data() n');
-    expect(r.rows[0].n).toBe(5);
+    expect(r.rows[0].n).toBe(7);
   });
 
   it('刪除公司：隊伍保留，只移除該公司的隊員、邀請碼與窗口', async () => {

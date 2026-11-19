@@ -15,14 +15,14 @@ import type { Member, MemberInput, Team } from '../types';
 import { createSeed, type DemoDb } from './demoSeed';
 import type { DataApi, JoinInput } from './types';
 
-const STORAGE_KEY = 'hexagon-sportday-demo-v6';
+const STORAGE_KEY = 'hexagon-sportday-demo-v7';
 
 function load(): DemoDb {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb;
-      if (parsed.version === 6) return parsed;
+      if (parsed.version === 7) return parsed;
     }
   } catch {
     // localStorage 不可用或資料損毀時改用初始資料
@@ -107,8 +107,10 @@ export function createDemoApi(): DataApi {
     const clean = cleanMemberInput(input);
     const msg = validateMemberInput(clean);
     if (msg) fail(msg);
-    // 模擬 national_id unique：全活動不可重複（不論可見與否）
-    const dup = db.members.find((m) => m.id !== exceptMemberId && m.private?.national_id === clean.national_id);
+    // 模擬 national_id unique：全活動不可重複（不論可見與否）；未填（null）不互相衝突
+    const dup =
+      clean.national_id &&
+      db.members.find((m) => m.id !== exceptMemberId && m.private?.national_id === clean.national_id);
     if (dup) fail(`身分證字號 ${clean.national_id} 已報名，同一人不可重複報名`);
     return clean;
   }
@@ -400,7 +402,7 @@ export function createDemoApi(): DataApi {
       const added: Member[] = [];
       for (const input of inputs) {
         const clean = assertMemberInput(input);
-        if (added.some((m) => m.private?.national_id === clean.national_id)) {
+        if (clean.national_id && added.some((m) => m.private?.national_id === clean.national_id)) {
           fail(`身分證字號 ${clean.national_id} 已報名，同一人不可重複報名`);
         }
         added.push({ id: crypto.randomUUID(), team_id: teamId, org_id: orgId, ...splitInput(clean) });

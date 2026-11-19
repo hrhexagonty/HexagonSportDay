@@ -67,13 +67,16 @@ export interface TeamContact {
   created_at: string;
 }
 
-/** 隊員個資（member_private 表）：只有隊員所屬公司窗口與管理員看得到 */
+/**
+ * 隊員個資（member_private 表）：只有隊員所屬公司窗口與管理員看得到
+ * 新增隊員只需姓名與性別，以下欄位皆可先不填（null）之後再補
+ */
 export interface MemberPrivate {
-  national_id: string; // 身分證 / 居留證
-  birthday: string; // YYYY-MM-DD
+  national_id: string | null; // 身分證 / 居留證
+  birthday: string | null; // YYYY-MM-DD
   phone: string | null;
   shirt_size: ShirtSize | null;
-  diet: Diet;
+  diet: Diet | null;
   special_needs: string | null; // null = 無特殊需求
 }
 
@@ -84,7 +87,7 @@ export interface Member {
   org_id: string; // 所屬公司
   name: string;
   gender: Gender;
-  /** 用餐習慣：同隊窗口（含聯隊其他公司）都看得到；null = 個資已清除 */
+  /** 用餐習慣：同隊窗口（含聯隊其他公司）都看得到；null = 未填或個資已清除 */
   diet: Diet | null;
   private: MemberPrivate | null;
 }

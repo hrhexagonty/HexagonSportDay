@@ -1,5 +1,5 @@
 // 批次匯入隊員：解析從 Excel 複製貼上的文字（Tab 分隔）或 CSV（逗號分隔）
-// 欄位順序見 IMPORT_COLUMNS；手機、衣服尺寸、特殊需求可留空
+// 欄位順序見 IMPORT_COLUMNS；只有姓名、性別必填，其餘欄位可留空（之後再補）
 
 import { normalizeId } from './idNumber';
 import { cleanMemberInput, normalizeShirtSize, parseBirthday, parseDiet, parseGender, validateMemberInput } from './member';
@@ -31,12 +31,13 @@ export function parseMemberRows(text: string, now: Date = new Date()): ParsedRow
     const fail = (error: string) => rows.push({ line, raw, error });
 
     if (!name) return fail('缺少姓名');
+    if (!genderRaw) return fail('缺少性別，請填 男 / 女');
     const gender = parseGender(genderRaw);
     if (!gender) return fail(`性別「${genderRaw}」無法辨識，請填 男 / 女`);
-    const birthday = parseBirthday(birthdayRaw);
-    if (!birthday) return fail(`生日「${birthdayRaw}」無法辨識，例如 1990/5/12 或民國 79/5/12`);
-    const diet = parseDiet(dietRaw);
-    if (!diet) return fail(`用餐習慣「${dietRaw}」無法辨識，請填 葷食 / 蛋奶素 / 全素`);
+    const birthday = birthdayRaw ? parseBirthday(birthdayRaw) : null;
+    if (birthdayRaw && !birthday) return fail(`生日「${birthdayRaw}」無法辨識，例如 1990/5/12 或民國 79/5/12`);
+    const diet = dietRaw ? (parseDiet(dietRaw) ?? null) : null;
+    if (dietRaw && !diet) return fail(`用餐習慣「${dietRaw}」無法辨識，請填 葷食 / 蛋奶素 / 全素`);
     const size = normalizeShirtSize(shirt);
     if (size === undefined) return fail(`衣服尺寸「${shirt}」無法辨識，可填 ${SHIRT_SIZES.join(' / ')}`);
 
@@ -55,10 +56,10 @@ export function parseMemberRows(text: string, now: Date = new Date()): ParsedRow
     rows.push({ line, raw, value });
   });
 
-  // 同一批資料內的證號重複
+  // 同一批資料內的證號重複（未填證號不檢查）
   const seen = new Map<string, number>();
   for (const r of rows) {
-    if (!r.value) continue;
+    if (!r.value?.national_id) continue;
     const prev = seen.get(r.value.national_id);
     if (prev !== undefined) {
       r.error = `身分證字號與第 ${prev} 行重複`;

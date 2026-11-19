@@ -9,6 +9,7 @@ import {
   teamSizeLabel,
   type StatusLevel,
 } from '../../lib/rules';
+import { missingFields } from '../../lib/member';
 import { CATEGORY_LABEL } from '../../lib/types';
 import type { AdminData } from './types';
 
@@ -38,6 +39,8 @@ export default function Overview({ data }: { data: AdminData }) {
   const unassigned = teams.filter((t) => t.org_ids.length === 0).length;
   const complete = rows.filter((r) => r.status.level === 'complete').length;
   const female = members.filter((m) => m.gender === 'F').length;
+  // 只填姓名、性別先送出，證號 / 生日 / 用餐尚未補齊的隊員
+  const missing = members.filter((m) => m.private && missingFields(m.private).length > 0).length;
   const shown = rows.filter(
     (r) =>
       (level === 'all' || r.status.level === level) &&
@@ -57,7 +60,11 @@ export default function Overview({ data }: { data: AdminData }) {
           value={`${teams.length} / ${target} 隊`}
           hint={<ProgressBar value={teams.length} max={target} />}
         />
-        <StatCard label="已登錄隊員" value={`${members.length} 人`} hint={`女 ${female} · 男 ${members.length - female}`} />
+        <StatCard
+          label="已登錄隊員"
+          value={`${members.length} 人`}
+          hint={`女 ${female} · 男 ${members.length - female}${missing ? ` · 資料待補 ${missing}` : ''}`}
+        />
         <StatCard
           label="檢核完成"
           value={`${complete} / ${teams.length} 隊`}

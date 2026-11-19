@@ -40,6 +40,7 @@ npm run build                                # typecheck + vite build → dist/
 - **窗口綁定**：`bind_team_contact`（內部函式）檢查邀請碼與所選隊伍相符、`teams.contact_limit` 未滿（advisory lock 防並行超額）。註冊時前端把 `team_id`、`invite_code` 放進 signUp 的 user metadata，由 `handle_new_user` trigger 一併綁定，失敗則整筆註冊失敗（不會留下無隊伍帳號，也不受 Confirm email 影響）；已登入帳號用 `join_team` 加入其他隊伍。同一位窗口代表多隊時共用一個帳號（Supabase 一個信箱只能一個帳號）：`registerForTeam` 遇到已註冊的信箱會以原本的密碼登入再呼叫 `join_team`。
 - `members`（姓名、性別、所屬公司 `org_id`）：同隊窗口都看得到，用於安排項目選手；但只能新增 / 修改 / 刪除**自己以該公司身分加入（`is_team_org_contact`）**的隊員。`(team_id, org_id)` 有複合外鍵指向 `team_orgs`。
 - `member_private`（身分證 / 居留證、生日、手機、尺寸、用餐、特殊需求）：**只有「該隊 × 該公司」的窗口與管理員**看得到；前端 `Member.private === null` 代表無權檢視或已被清除。例外是用餐習慣：聯隊其他公司的窗口也要看得到，透過唯讀的 `member_diets()` 只開放 `diet` 一欄（前端為 `Member.diet`），不要為此放寬 `member_private` 的 RLS。`national_id` 全活動唯一。
+- 隊員只有**姓名、性別必填**：`member_private` 的證號、生日、用餐都可為 null（新增隊員時一律建立 `member_private` 列，未填欄位存 null；有填才檢查格式、檢查碼、性別一致、唯一）。名單以 `member.ts` 的 `missingFields` 標示「待補」，不阻擋任何寫入或報名。
 - `organizations`、`team_invites`、他人的 `team_contacts` 只有管理員讀得到；窗口取公司名稱用 `org_names()`，取自己的隊伍用 `my_teams()`；未登入的註冊頁只能用 `lookup_team_invite(邀請碼)` 查出對應隊伍與公司，前台不公開隊伍清單。
 - 窗口可改隊長資料，隊名與 `contact_limit` 只有管理員能改（`teams_before_update` trigger）；刪除隊伍限管理員。
 - `event_entries` 不存 team_id，隊伍經由 member 推得；聯隊內任一公司都可為全隊安排選手。
@@ -52,13 +53,13 @@ npm run build                                # typecheck + vite build → dist/
 | --- | --- | --- |
 | 隊伍人數上限、每項每隊上限、每人項目數、截止鎖定 | migration 中的 trigger | `src/lib/rules.ts` 的 `check*` |
 | 邀請碼格式（6–20 位英數大寫）、窗口人數上限、邀請碼需與隊伍相符 | `team_invites` check、`bind_team_contact` | `src/lib/inviteCode.ts`、`demo.ts` |
-| 身分證 / 居留證檢查碼、性別與證號一致、生日不可在未來 | `tw_id_valid`、`tw_id_gender`、`member_private_before_write` | `src/lib/idNumber.ts`、`src/lib/member.ts` |
+| 身分證 / 居留證檢查碼、性別與證號一致、生日不可在未來（皆為選填，有填才檢查；空字串視為 null） | `tw_id_valid`、`tw_id_gender`、`member_private_before_write`、`add_members` / `update_member` | `src/lib/idNumber.ts`、`src/lib/member.ts`、`src/lib/importParse.ts` |
 | 公司組隊：一人一隊、人數上限、送出時人數與女性下限、已送出不可調整 | `org_squads_before_write`、`org_squad_members_before_write` | `rules.ts` 的 `checkAddSquadMember`、`checkSubmitSquad`、`evaluateSquad` |
 | 示範影片連結只接受 http/https | `events.video_url` check | `src/lib/video.ts` |
 | 人數 / 女性下限（「未完成」，不阻擋寫入） | — | `rules.ts` 的 `evaluate*` |
 
 另外需同步的重複資料：比賽項目初始資料（migration 尾端 ↔ `src/lib/api/demoSeed.ts` 的 `DEMO_EVENTS`）、資料表欄位（migration ↔ `src/lib/types.ts`）。
-`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入）已於 2026-11-18 套用；`20261119000000_invite_first.sql`（先輸入邀請碼）已於 2026-11-19 套用；`20261120000000_company_squads.sql`（競賽規則欄位、公司組隊、`org_roster`）已於 2026-11-19 套用；`20261121000000_member_diets.sql`（聯隊其他公司可看用餐習慣）需由使用者於 SQL Editor 執行，前端依賴它，**套用並確認前不可推送**。已套用的 migration 不可再修改。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
+`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入）已於 2026-11-18 套用；`20261119000000_invite_first.sql`（先輸入邀請碼）已於 2026-11-19 套用；`20261120000000_company_squads.sql`（競賽規則欄位、公司組隊、`org_roster`）已於 2026-11-19 套用；`20261121000000_member_diets.sql`（聯隊其他公司可看用餐習慣）已於 2026-11-19 套用；`20261122000000_optional_member_fields.sql`（證號、生日、用餐改為選填）需由使用者於 SQL Editor 執行，前端依賴它，**套用並確認前不可推送**。已套用的 migration 不可再修改。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
 
 ### 環境
 - 本機 `.env.local`（不提交）已指向**正式** Supabase：`npm run dev` 的操作會寫入正式資料庫。測試請用 `npm run dev:demo`（`.claude/launch.json` 的 `dev-demo`，port 5174）。

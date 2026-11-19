@@ -2,7 +2,17 @@
 // 與 DB 端限制（member_private 的 check / trigger）保持一致
 
 import { checkTwId, normalizeId } from './idNumber';
-import { DIETS, DIET_LABEL, GENDER_LABEL, SHIRT_SIZES, type Diet, type Gender, type MemberInput, type ShirtSize } from './types';
+import {
+  DIETS,
+  DIET_LABEL,
+  GENDER_LABEL,
+  SHIRT_SIZES,
+  type Diet,
+  type Gender,
+  type MemberInput,
+  type MemberPrivate,
+  type ShirtSize,
+} from './types';
 
 const GENDER_MAP: Record<string, Gender> = {
   男: 'M',
@@ -80,18 +90,25 @@ function todayIso(now: Date): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** 驗證整筆隊員資料，回傳第一個錯誤訊息；通過回傳 null */
+/**
+ * 驗證整筆隊員資料，回傳第一個錯誤訊息；通過回傳 null。
+ * 只有姓名、性別必填；證號、生日、用餐等選填欄位有填才檢查（未填可之後再補）
+ */
 export function validateMemberInput(m: MemberInput, now: Date = new Date()): string | null {
   if (!m.name.trim()) return '請填寫姓名';
   if (m.gender !== 'M' && m.gender !== 'F') return '請選擇性別';
-  const id = checkTwId(m.national_id);
-  if (!id.ok) return id.error!;
-  if (id.gender && id.gender !== m.gender) {
-    return `性別（${GENDER_LABEL[m.gender]}）與身分證字號不符`;
+  if (m.national_id) {
+    const id = checkTwId(m.national_id);
+    if (!id.ok) return id.error!;
+    if (id.gender && id.gender !== m.gender) {
+      return `性別（${GENDER_LABEL[m.gender]}）與身分證字號不符`;
+    }
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(m.birthday) || !parseBirthday(m.birthday)) return '請填寫正確的生日';
-  if (m.birthday < '1900-01-01' || m.birthday > todayIso(now)) return '生日超出合理範圍';
-  if (!DIETS.includes(m.diet)) return `請選擇用餐習慣（${DIETS.map((d) => DIET_LABEL[d]).join(' / ')}）`;
+  if (m.birthday) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.birthday) || !parseBirthday(m.birthday)) return '請填寫正確的生日';
+    if (m.birthday < '1900-01-01' || m.birthday > todayIso(now)) return '生日超出合理範圍';
+  }
+  if (m.diet && !DIETS.includes(m.diet)) return `用餐習慣請選擇 ${DIETS.map((d) => DIET_LABEL[d]).join(' / ')}`;
   return null;
 }
 
@@ -100,10 +117,22 @@ export function cleanMemberInput(m: MemberInput): MemberInput {
   return {
     ...m,
     name: m.name.trim(),
-    national_id: normalizeId(m.national_id),
+    national_id: normalizeId(m.national_id ?? '') || null,
+    birthday: m.birthday?.trim() || null,
+    diet: m.diet || null,
     phone: m.phone?.trim() || null,
     special_needs: m.special_needs?.trim() || null,
   };
+}
+
+/** 之後需補齊的欄位（保險與訂餐用）；回傳尚未填寫的欄位名稱 */
+export const REQUIRED_LATER = ['身分證字號', '生日', '用餐習慣'] as const;
+export function missingFields(p: MemberPrivate): string[] {
+  const missing: string[] = [];
+  if (!p.national_id) missing.push(REQUIRED_LATER[0]);
+  if (!p.birthday) missing.push(REQUIRED_LATER[1]);
+  if (!p.diet) missing.push(REQUIRED_LATER[2]);
+  return missing;
 }
 
 /** 計算年齡（以活動日或今天為準） */

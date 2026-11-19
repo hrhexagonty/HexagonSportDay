@@ -4,7 +4,7 @@ import { Badge, EmptyState, Field } from '../../components/ui';
 import { api } from '../../lib/api';
 import { checkTwId, maskId } from '../../lib/idNumber';
 import { IMPORT_COLUMNS, parseMemberRows } from '../../lib/importParse';
-import { cleanMemberInput, validateMemberInput } from '../../lib/member';
+import { cleanMemberInput, missingFields, validateMemberInput } from '../../lib/member';
 import { checkAddMembers } from '../../lib/rules';
 import {
   DIETS,
@@ -23,12 +23,13 @@ import type { TeamPageData } from './types';
 const PRIVACY_NOTICE =
   '我已告知隊員：所填個資（身分證字號、生日、手機、用餐習慣、特殊需求等）僅用於本次運動會之報名、保險、餐點與場地安排，活動結束後即刪除，並已取得隊員同意。';
 
+// 只有姓名、性別必填；其餘欄位可先留空，之後再用「編輯」補上
 const EMPTY_FORM = {
   name: '',
   gender: 'M' as Gender,
   national_id: '',
   birthday: '',
-  diet: 'meat' as Diet,
+  diet: '' as Diet | '',
   special_needs: '',
   phone: '',
   shirt_size: '',
@@ -40,7 +41,7 @@ function toInput(f: typeof EMPTY_FORM): MemberInput {
     gender: f.gender,
     national_id: f.national_id,
     birthday: f.birthday,
-    diet: f.diet,
+    diet: f.diet || null,
     special_needs: f.special_needs,
     phone: f.phone,
     shirt_size: (f.shirt_size || null) as ShirtSize | null,
@@ -95,7 +96,7 @@ function MemberForm({
           gender: initial.gender,
           national_id: p?.national_id ?? '',
           birthday: p?.birthday ?? '',
-          diet: p?.diet ?? ('meat' as Diet),
+          diet: (p?.diet ?? '') as Diet | '',
           special_needs: p?.special_needs ?? '',
           phone: p?.phone ?? '',
           shirt_size: p?.shirt_size ?? '',
@@ -138,7 +139,7 @@ function MemberForm({
           <input required autoFocus value={form.name} onChange={set('name')} />
         </Field>
         <Field label="身分證 / 居留證字號">
-          <input required value={form.national_id} onChange={set('national_id')} onBlur={onIdBlur} className="mono" />
+          <input value={form.national_id} onChange={set('national_id')} onBlur={onIdBlur} className="mono" placeholder="可之後再補" />
         </Field>
         <Field label="性別">
           <select value={form.gender} onChange={set('gender')}>
@@ -147,12 +148,13 @@ function MemberForm({
           </select>
         </Field>
         <Field label="生日">
-          <input type="date" required value={form.birthday} onChange={set('birthday')} />
+          <input type="date" value={form.birthday} onChange={set('birthday')} />
         </Field>
       </div>
       <div className="row-4">
         <Field label="用餐習慣">
           <select value={form.diet} onChange={set('diet')}>
+            <option value="">未填</option>
             {DIETS.map((d) => (
               <option key={d} value={d}>
                 {DIET_LABEL[d]}
@@ -175,6 +177,9 @@ function MemberForm({
           </select>
         </Field>
       </div>
+      <p className="muted small">
+        只有<b>姓名、性別</b>必填，其餘欄位可先留空送出，之後按「編輯」補上；身分證字號、生日、用餐習慣供投保與訂餐使用，請於報名截止前補齊。
+      </p>
       {!initial && <ConsentCheck checked={consent} onChange={setConsent} />}
       <div className="actions">
         <button className="btn btn-primary" disabled={busy || !consent}>
@@ -225,13 +230,13 @@ function ImportPanel({ data, onDone }: { data: TeamPageData; onDone: () => void 
       </div>
       <p className="muted small">
         從 Excel 選取欄位後直接貼上（每列一人）。欄位順序：<b>{IMPORT_COLUMNS.join('、')}</b>。
-        特殊需求、手機、衣服尺寸可留空；生日可填 1990/5/12 或民國 79/5/12；第一列若是表頭會自動略過。
+        只有姓名、性別必填，其餘欄位可留空之後再補；生日可填 1990/5/12 或民國 79/5/12；第一列若是表頭會自動略過。
       </p>
       <textarea
         rows={8}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={`${IMPORT_COLUMNS.join('\t')}\n王小明\t男\tA123456789\t1990/5/12\t葷食\t\t0912345678\tL`}
+        placeholder={`${IMPORT_COLUMNS.join('\t')}\n王小明\t男\tA123456789\t1990/5/12\t葷食\t\t0912345678\tL\n李小華\t女`}
         className="mono"
       />
       {rows.length > 0 && (
@@ -274,6 +279,7 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
   const [panel, setPanel] = useState<'none' | 'add' | 'import'>('none');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  const [onlyMissing, setOnlyMissing] = useState(false);
 
   const eventsByMember = useMemo(() => {
     const names = new Map(events.map((e) => [e.id, e.name]));
@@ -283,7 +289,12 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
   }, [entries, events]);
 
   const canEdit = (m: Member) => editable && (data.isAdmin || m.org_id === data.myOrgId);
-  const shown = members.filter((m) => !filter || m.name.includes(filter));
+  // 資料待補：只算看得到個資的隊員（聯隊其他公司的隊員由該公司窗口負責）
+  const missingOf = (m: Member) => (m.private ? missingFields(m.private) : []);
+  const missingCount = members.filter((m) => missingOf(m).length > 0).length;
+  const shown = members.filter(
+    (m) => (!filter || m.name.includes(filter)) && (!onlyMissing || missingOf(m).length > 0),
+  );
   const editing = members.find((m) => m.id === editingId);
   const full = members.length >= settings.team_max_size;
 
@@ -340,6 +351,15 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
         <span className="muted small">
           {members.length} / {settings.team_max_size} 人
         </span>
+        {(missingCount > 0 || onlyMissing) && (
+          <button
+            className={`chip${onlyMissing ? ' chip-active' : ''}`}
+            title="尚未填寫身分證字號、生日或用餐習慣的隊員；點選只顯示這些隊員"
+            onClick={() => setOnlyMissing(!onlyMissing)}
+          >
+            資料待補 {missingCount} 人
+          </button>
+        )}
         <div className="spacer" />
         {editable && (
           <>
@@ -397,11 +417,18 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
             <tbody>
               {shown.map((m, i) => {
                 const p = m.private;
+                const missing = missingOf(m);
+                const blank = <span className="muted">未填</span>;
                 return (
                   <tr key={m.id} className={m.id === editingId ? 'row-active' : undefined}>
                     <td className="muted">{i + 1}</td>
                     <td>
                       <b>{m.name}</b>
+                      {missing.length > 0 && (
+                        <span className="member-missing" title={`待補：${missing.join('、')}`}>
+                          <Badge tone="warn">待補</Badge>
+                        </span>
+                      )}
                     </td>
                     {merged && <td className="muted">{orgNames.get(m.org_id) ?? '—'}</td>}
                     <td>
@@ -409,7 +436,7 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
                     </td>
                     <td>
                       {!m.diet ? (
-                        <span className="muted">—</span>
+                        p ? blank : <span className="muted">—</span>
                       ) : m.diet === 'meat' ? (
                         DIET_LABEL[m.diet]
                       ) : (
@@ -418,8 +445,8 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
                     </td>
                     {p ? (
                       <>
-                        <td className="mono">{maskId(p.national_id)}</td>
-                        <td className="mono">{p.birthday}</td>
+                        <td className="mono">{p.national_id ? maskId(p.national_id) : blank}</td>
+                        <td className="mono">{p.birthday ?? blank}</td>
                         <td>{p.special_needs ? <Badge tone="warn">{p.special_needs}</Badge> : <span className="muted">—</span>}</td>
                         <td className="mono">{p.phone ?? '—'}</td>
                         <td>{p.shirt_size ?? '—'}</td>

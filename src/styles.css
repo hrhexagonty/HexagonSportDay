@@ -751,6 +751,11 @@ textarea {
   font-size: 0.78rem;
   color: var(--text-3);
 }
+/* 隊員名單：姓名旁的「待補」標籤（只填姓名、性別先送出的隊員） */
+.member-missing {
+  margin-left: 0.45rem;
+  cursor: help;
+}
 .row-2,
 .row-3,
 .row-4,

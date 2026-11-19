@@ -30,6 +30,22 @@ describe('parseMemberRows', () => {
     expect(rows[0].value).toMatchObject({ gender: 'F', diet: 'vegan', special_needs: null });
   });
 
+  it('只有姓名、性別必填，其餘欄位可留空；未填證號不算重複', () => {
+    const rows = parseMemberRows(['李小華\t女', '王大同,男,,,,,,', '陳一\t女\t\t\t蛋奶素', '缺性別'].join('\n'), NOW);
+    expect(rows.map((r) => r.error ?? 'ok')).toEqual(['ok', 'ok', 'ok', '缺少性別，請填 男 / 女']);
+    expect(rows[0].value).toEqual({
+      name: '李小華',
+      gender: 'F',
+      national_id: null,
+      birthday: null,
+      diet: null,
+      special_needs: null,
+      phone: null,
+      shirt_size: null,
+    });
+    expect(rows[2].value).toMatchObject({ national_id: null, diet: 'ovo_lacto' });
+  });
+
   it('標記錯誤列與批次內重複證號', () => {
     const rows = parseMemberRows(
       [
