@@ -3,6 +3,7 @@ import { RequireAuth } from './auth/RequireAuth';
 import Layout from './components/Layout';
 import AdminPage from './pages/admin/AdminPage';
 import CompanyPage from './pages/Company';
+import Guide from './pages/Guide';
 import Home from './pages/Home';
 import JoinTeam from './pages/JoinTeam';
 import Login from './pages/Login';
@@ -17,6 +18,14 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/rules" element={<Rules />} />
+        <Route
+          path="/guide/:pageId"
+          element={
+            <RequireAuth need="any">
+              <Guide />
+            </RequireAuth>
+          }
+        />
         <Route
           path="/join"
           element={

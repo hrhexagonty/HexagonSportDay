@@ -3,6 +3,7 @@ import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { normalizeInviteCode } from '../inviteCode';
 import type {
   EventEntry,
+  GuidePage,
   Member,
   MemberPrivate,
   OrgName,
@@ -37,6 +38,7 @@ function translateError(error: PostgrestError): string {
   if (error.code === '23514' && text.includes('video_url')) return '影片連結需以 http:// 或 https:// 開頭';
   if (error.code === '23514' && text.includes('vendors_name')) return '請輸入廠商名稱';
   if (error.code === '23514' && text.includes('account_limit')) return '帳號數需為 0 以上的整數';
+  if (error.code === '23514' && text.includes('guide_pages_content')) return '內容太大，請減少或縮小圖片';
   if (error.code === '23503' && text.includes('members_team_org_fkey')) return '此公司未參與該隊伍';
   if (error.code === '42501') return '權限不足';
   // P0001 為 trigger / RPC 主動丟出的中文訊息，直接顯示
@@ -238,6 +240,19 @@ export function createSupabaseApi(url: string, key: string): DataApi {
 
     async updateEvent(id, patch) {
       await run(sb.from('events').update(patch).eq('id', id));
+    },
+
+    async listGuidePages() {
+      return run(sb.from('guide_pages').select('id, content, updated_at').order('sort_order')) as Promise<GuidePage[]>;
+    },
+
+    async getGuidePage(id) {
+      return run(sb.from('guide_pages').select('id, content, updated_at').eq('id', id).maybeSingle()) as Promise<GuidePage | null>;
+    },
+
+    async updateGuidePage(id, content) {
+      const rows = await run(sb.from('guide_pages').update({ content }).eq('id', id).select('id'));
+      if (!rows?.length) throw new Error('權限不足：只有活動小組與委外廠商可以編輯');
     },
 
     async listOrganizations() {

@@ -696,3 +696,41 @@ describe('委外廠商', () => {
     expect((await db.query('select * from vendor_contacts')).rows).toEqual([]);
   });
 });
+
+describe('活動指南頁面', () => {
+  it('預設五個空白頁面；登入者才讀得到', async () => {
+    const r = await as<{ id: string; content: string; updated_at: string | null }>(
+      U.f,
+      'select id, content, updated_at from guide_pages order by sort_order',
+    );
+    expect(r.rows.map((x) => x.id)).toEqual(['venue', 'schedule', 'uniforms', 'meals', 'transport']);
+    expect(r.rows.every((x) => x.content === '' && x.updated_at === null)).toBe(true);
+    await expect(asAnon('select * from guide_pages')).rejects.toThrow('permission denied');
+  });
+
+  it('管理員與委外廠商可編輯並記錄更新時間；窗口不行；不能新增、刪除或改代碼', async () => {
+    await as(U.admin, `update guide_pages set content = '<p>管理員</p>' where id = 'venue'`);
+    const vendorCode = (
+      await as<{ invite_code: string }>(U.admin, `insert into vendors (name) values ('指南廠商') returning invite_code`)
+    ).rows[0].invite_code;
+    await as(U.v1, 'select join_vendor($1)', [vendorCode]);
+    await as(U.v1, `update guide_pages set content = '<p>廠商</p>' where id = 'meals'`);
+    expect((await as(U.f, `update guide_pages set content = 'x' where id = 'venue'`)).affectedRows).toBe(0);
+
+    const r = await db.query<{ id: string; content: string; set: boolean }>(
+      `select id, content, updated_at is not null set from guide_pages where id in ('venue', 'meals') order by id`,
+    );
+    expect(r.rows).toEqual([
+      { id: 'meals', content: '<p>廠商</p>', set: true },
+      { id: 'venue', content: '<p>管理員</p>', set: true },
+    ]);
+
+    await expect(as(U.admin, `insert into guide_pages (id) values ('x')`)).rejects.toThrow('permission denied');
+    await expect(as(U.admin, `delete from guide_pages where id = 'venue'`)).rejects.toThrow('permission denied');
+    await expect(as(U.admin, `update guide_pages set id = 'y' where id = 'venue'`)).rejects.toThrow('代碼');
+    // 內容大小上限（約 6MB）
+    await expect(
+      as(U.admin, `update guide_pages set content = repeat('a', 6000001) where id = 'venue'`),
+    ).rejects.toThrow('guide_pages_content_check');
+  });
+});

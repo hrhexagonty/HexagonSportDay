@@ -6,12 +6,12 @@ import { useAsync } from '../../lib/useAsync';
 import Exports from './Exports';
 import ContactsManager from './ContactsManager';
 import Overview from './Overview';
-import SettingsEditor from './SettingsEditor';
+import { ActivitySettings, EventsEditor } from './SettingsEditor';
 import Squads from './Squads';
 import TeamSetup from './TeamSetup';
 import type { AdminData } from './types';
 
-type Tab = 'overview' | 'setup' | 'contacts' | 'squads' | 'settings' | 'export';
+type Tab = 'overview' | 'setup' | 'contacts' | 'squads' | 'settings' | 'events' | 'export';
 
 const TABS: { value: Tab; label: string; vendor: boolean }[] = [
   { value: 'overview', label: '填報總覽', vendor: true },
@@ -19,7 +19,8 @@ const TABS: { value: Tab; label: string; vendor: boolean }[] = [
   // 窗口與邀請碼、匯出名單（含完整個資）不開放委外廠商
   { value: 'contacts', label: '窗口與邀請碼', vendor: false },
   { value: 'squads', label: '健力報名', vendor: true },
-  { value: 'settings', label: '活動與項目設定', vendor: true },
+  { value: 'settings', label: '活動設定', vendor: true },
+  { value: 'events', label: '競賽項目設定', vendor: true },
   { value: 'export', label: '匯出名單', vendor: false },
 ];
 
@@ -83,8 +84,8 @@ export default function AdminPage() {
           <h1>管理後台</h1>
           <p className="muted">
             {isVendor
-              ? '委外廠商：檢視各隊填報進度、隊伍配置與健力報名（僅供檢視，隊員證號、生日、手機已隱碼），並可編輯活動與項目設定。'
-              : '掌握各隊填報進度、配置公司與隊伍、管理窗口與邀請碼、檢視健力報名、編輯競賽規則、匯出名單。'}
+              ? '委外廠商：檢視各隊填報進度、隊伍配置與健力報名（僅供檢視，隊員證號、生日、手機已隱碼），並可編輯活動設定、活動指南與競賽項目。'
+              : '掌握各隊填報進度、配置公司與隊伍、管理窗口與邀請碼、檢視健力報名、編輯活動指南與競賽規則、匯出名單。'}
           </p>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={q.reload} disabled={q.loading}>
@@ -104,7 +105,8 @@ export default function AdminPage() {
           {tab === 'setup' && <TeamSetup data={q.data} onChanged={q.reload} />}
           {tab === 'contacts' && !isVendor && <ContactsManager data={q.data} onChanged={q.reload} />}
           {tab === 'squads' && <Squads data={q.data} onChanged={q.reload} />}
-          {tab === 'settings' && <SettingsEditor key={JSON.stringify(q.data.settings)} data={q.data} onChanged={q.reload} />}
+          {tab === 'settings' && <ActivitySettings data={q.data} onChanged={q.reload} />}
+          {tab === 'events' && <EventsEditor data={q.data} onChanged={q.reload} />}
           {tab === 'export' && !isVendor && <Exports data={q.data} onChanged={q.reload} />}
         </>
       )}

@@ -5,6 +5,7 @@ import {
   type Diet,
   type EventEntry,
   type Gender,
+  type GuidePage,
   type Member,
   type MemberPrivate,
   type OrgSquad,
@@ -41,7 +42,7 @@ export interface DemoContact {
 }
 
 export interface DemoDb {
-  version: 8;
+  version: 9;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
@@ -56,6 +57,8 @@ export interface DemoDb {
   /** 委外廠商與其帳號 */
   vendors: Vendor[];
   vendorContacts: DemoVendorContact[];
+  /** 活動指南頁面（對應 guide_pages） */
+  guidePages: GuidePage[];
   users: DemoUser[];
   sessionUserId: string | null;
 }
@@ -85,6 +88,29 @@ export const DEMO_ACCOUNTS = {
   admin: { email: 'admin@demo.local', password: 'demo', label: '活動管理員' },
   vendor: { email: 'vendor@demo.local', password: 'demo', label: '委外廠商（活動執行公司）' },
 } as const;
+
+/** 展示用的活動指南內容（其餘頁面留白，用來展示「尚未公布」） */
+const DEMO_GUIDE: Record<string, string> = {
+  schedule:
+    '<h2>當天活動流程</h2><p>（範例）實際流程以活動小組公告為準。</p>' +
+    '<table><thead><tr><th>時間</th><th>流程</th><th>地點</th></tr></thead><tbody>' +
+    '<tr><td>08:00</td><td>各隊報到、領取號碼布</td><td>體育館大門</td></tr>' +
+    '<tr><td>09:00</td><td>開幕式、暖身操</td><td>中央草坪</td></tr>' +
+    '<tr><td>09:40</td><td>趣味競賽（同心鼓顛球、四關障礙接力）</td><td>A、B 場</td></tr>' +
+    '<tr><td>12:00</td><td>午餐</td><td>各隊休息區</td></tr>' +
+    '<tr><td>13:00</td><td>嗨ROX競賽、健力比賽</td><td>C 場、重訓區</td></tr>' +
+    '<tr><td>15:30</td><td>毛毛蟲大隊接力</td><td>田徑場</td></tr>' +
+    '<tr><td>16:30</td><td>頒獎、閉幕</td><td>中央草坪</td></tr>' +
+    '</tbody></table>',
+  uniforms:
+    '<h2>隊服顏色對照</h2><p>（範例）各隊隊服顏色如下，請於報到時確認。</p>' +
+    '<table><thead><tr><th>隊伍</th><th>顏色</th></tr></thead><tbody>' +
+    '<tr><td>六角科技 閃電隊</td><td><span style="color: #ffd400;">■</span> 閃電黃</td></tr>' +
+    '<tr><td>六角建設 鋼鐵隊</td><td><span style="color: #8a8f98;">■</span> 鋼鐵灰</td></tr>' +
+    '<tr><td>六角餐飲 美味隊</td><td><span style="color: #ff6b35;">■</span> 橘紅</td></tr>' +
+    '<tr><td>醫材能源文創 聯隊</td><td><span style="color: #10b981;">■</span> 翡翠綠</td></tr>' +
+    '</tbody></table>',
+};
 
 // [公司名稱, 邀請碼前綴, 聯絡人]；邀請碼 = 前綴 + 隊伍編號，例如 TECH01
 const ORGS: [string, string, string][] = [
@@ -251,7 +277,7 @@ export function createSeed(): DemoDb {
   ];
 
   return {
-    version: 8,
+    version: 9,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',
@@ -277,6 +303,11 @@ export function createSeed(): DemoDb {
     squads,
     vendors: [{ id: 'vendor-1', name: '（範例）活動執行公司', invite_code: 'VENDOR01', account_limit: 3 }],
     vendorContacts: [{ user_id: 'u-vendor', vendor_id: 'vendor-1', created_at: '2026-11-19T01:00:00.000Z' }],
+    guidePages: ['venue', 'schedule', 'uniforms', 'meals', 'transport'].map((id) => ({
+      id,
+      content: DEMO_GUIDE[id] ?? '',
+      updated_at: DEMO_GUIDE[id] ? '2026-11-20T02:00:00.000Z' : null,
+    })),
     users: [
       { id: 'u-admin', email: DEMO_ACCOUNTS.admin.email, password: 'demo', role: 'super_admin' },
       { id: 'u-org', email: DEMO_ACCOUNTS.org.email, password: 'demo', role: 'org_admin' },

@@ -6,6 +6,7 @@ import { blankToNull, fromLocalInput, toLocalInput } from '../../lib/format';
 import { isCompanyEvent, registrationOpen, sortEvents } from '../../lib/rules';
 import { CATEGORY_LABEL, type SportEvent } from '../../lib/types';
 import { isValidVideoUrl } from '../../lib/video';
+import GuideEditors from './GuideEditors';
 import type { AdminData } from './types';
 
 function SettingsForm({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
@@ -204,10 +205,21 @@ function EventRow({ event, onChanged }: { event: SportEvent; onChanged: () => vo
   );
 }
 
-export default function SettingsEditor({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
+/** 後台「活動設定」：活動基本設定 + 活動指南五個頁面 */
+export function ActivitySettings({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
   return (
     <div className="stack-lg">
-      <SettingsForm data={data} onChanged={onChanged} />
+      {/* 設定重新載入時重建表單；活動指南的草稿不受影響 */}
+      <SettingsForm key={JSON.stringify(data.settings)} data={data} onChanged={onChanged} />
+      <GuideEditors />
+    </div>
+  );
+}
+
+/** 後台「競賽項目設定」：各項目的人數、競賽規則與示範影片 */
+export function EventsEditor({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
+  return (
+    <div className="stack-lg">
       <section className="card stack">
         <div>
           <h2>比賽項目、競賽規則與示範影片</h2>

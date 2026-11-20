@@ -1,6 +1,7 @@
 import type {
   EventEntry,
   EventInput,
+  GuidePage,
   Member,
   MemberInput,
   OrgInput,
@@ -101,6 +102,12 @@ export interface DataApi {
   updateSettings(patch: Partial<Settings>): Promise<void>;
   listEvents(): Promise<SportEvent[]>;
   updateEvent(id: string, patch: Partial<EventInput>): Promise<void>;
+
+  // ---- 活動指南（場地配置、當天活動流程…；登入者可讀，管理員與委外廠商可改） ----
+  listGuidePages(): Promise<GuidePage[]>;
+  getGuidePage(id: string): Promise<GuidePage | null>;
+  /** content 需先以 sanitizeHtml 過濾 */
+  updateGuidePage(id: string, content: string): Promise<void>;
 
   // ---- 公司（管理員） ----
   listOrganizations(): Promise<Organization[]>;

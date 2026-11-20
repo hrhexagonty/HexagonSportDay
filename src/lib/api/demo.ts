@@ -2,6 +2,7 @@
 // 讓尚未建立 Supabase 專案時也能完整操作雛形；可見範圍規則見 ./types.ts 的 DataApi 說明
 import { INVITE_CODE_PATTERN, normalizeInviteCode, randomInviteCode } from '../inviteCode';
 import { maskPhone, maskPrivate } from '../mask';
+import { MAX_GUIDE_BYTES, byteSize } from '../richText';
 import { cleanMemberInput, validateMemberInput } from '../member';
 import {
   checkAddEntry,
@@ -16,14 +17,14 @@ import type { Member, MemberInput, Team } from '../types';
 import { createSeed, type DemoDb } from './demoSeed';
 import type { DataApi, InviteInfo } from './types';
 
-const STORAGE_KEY = 'hexagon-sportday-demo-v8';
+const STORAGE_KEY = 'hexagon-sportday-demo-v9';
 
 function load(): DemoDb {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb;
-      if (parsed.version === 8) return parsed;
+      if (parsed.version === 9) return parsed;
     }
   } catch {
     // localStorage 不可用或資料損毀時改用初始資料
@@ -312,6 +313,26 @@ export function createDemoApi(): DataApi {
       if (next.max_per_team < next.min_per_team) fail('人數上限不可小於下限');
       if (next.video_url && !/^https?:\/\/\S+$/i.test(next.video_url)) fail('影片連結需以 http:// 或 https:// 開頭');
       Object.assign(ev, patch);
+      commit();
+    },
+
+    async listGuidePages() {
+      requireUser();
+      return copy(db.guidePages);
+    },
+
+    async getGuidePage(id) {
+      requireUser();
+      return copy(db.guidePages.find((p) => p.id === id) ?? null);
+    },
+
+    async updateGuidePage(id, content) {
+      // 模擬 guide_pages 的 RLS（管理員與委外廠商）與大小上限
+      requireAdminOrVendor();
+      const page = db.guidePages.find((p) => p.id === id) ?? fail('找不到頁面');
+      if (byteSize(content) > MAX_GUIDE_BYTES) fail('內容太大，請減少或縮小圖片');
+      page.content = content;
+      page.updated_at = new Date().toISOString();
       commit();
     },
 

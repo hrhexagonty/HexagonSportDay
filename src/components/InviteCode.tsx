@@ -94,7 +94,7 @@ export function InviteTeamCard({ info }: { info: InviteInfo }) {
         <span>VENDOR</span>
         <b>{info.vendorName}</b>
         <p className="muted small">
-          你將以「委外廠商」身分註冊：可檢視填報總覽、各隊隊員與項目報名、隊伍配置、健力報名（隊員證號、生日、手機為隱碼），並可編輯活動與項目設定。
+          你將以「委外廠商」身分註冊：可檢視填報總覽、各隊隊員與項目報名、隊伍配置、健力報名（隊員證號、生日、手機為隱碼），並可編輯活動設定（含活動指南）與競賽項目設定。
         </p>
       </div>
     );

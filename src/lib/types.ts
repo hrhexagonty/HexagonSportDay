@@ -127,6 +127,13 @@ export interface SportEvent {
   video_url: string;
 }
 
+/** 活動指南頁面（guide_pages 表）：content 為已過濾的 HTML；updated_at 為 null 代表尚未編輯過 */
+export interface GuidePage {
+  id: string;
+  content: string;
+  updated_at: string | null;
+}
+
 /** 公司同仁（跨分隊，只有姓名、性別與分隊，不含個資） */
 export interface RosterMember {
   id: string;
