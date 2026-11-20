@@ -1,6 +1,6 @@
 # 交接文件：HexagonSportDay 運動會報名平台
 
-> 更新日期：2026-11-20　｜　最新 commit：`e12083a`（`main`，已推送並部署）
+> 更新日期：2026-11-20　｜　最新功能 commit：`0f33e15`（`main`，已推送並部署；之後只有本檔的更新 commit）
 > 本檔記錄**進度、決策、工作慣例與環境細節**；架構、資料模型、前後端規則同步表、UI 規範請看 [CLAUDE.md](CLAUDE.md)，兩份都要讀。
 
 ---
@@ -9,9 +9,9 @@
 
 | 項目 | 狀態 |
 | --- | --- |
-| 程式碼 | `main` 乾淨，無未提交變更；最新 `e12083a` |
+| 程式碼 | `main` 乾淨，無未提交變更；最新功能 commit `0f33e15` |
 | 部署 | GitHub Actions（測試 → 建置 → 部署）已成功；網站 https://hrhexagonty.github.io/HexagonSportDay/ 為最新版 |
-| 資料庫 | 6 支 migration **全部已套用**到正式 Supabase（見第 3 節） |
+| 資料庫 | 7 支 migration **全部已套用**到正式 Supabase（見第 3 節） |
 | 進行中的工作 | 無。等待使用者提出下一個需求 |
 | 正式站使用情況 | 使用者已開始使用：已發放邀請碼（29 組隊伍 × 公司），已有窗口完成註冊 |
 
@@ -32,14 +32,18 @@
 | 11-19 | `1245145` | 新增「競賽規則」頁（規則文字 + 示範影片連結）與「我的公司」健力組隊 |
 | 11-19 | `182124a` | 聯隊隱私：其他公司的窗口只看得到隊員姓名、性別、用餐習慣 |
 | 11-19 | `e12083a` | 隊員只需填姓名、性別即可送出；證號 / 生日 / 用餐可之後補，名單標示「資料待補」 |
+| 11-20 | `94f9341` | 新增本交接文件 |
+| 11-20 | `5800992` | 新增「委外廠商」角色（唯讀後台、個資隱碼、可編輯活動與項目設定）；用餐習慣新增「葷食不吃豬」 |
+| 11-20 | `0f33e15` | 每一頁頁尾最下方加入「主辦單位：特耀餐飲服務股份有限公司」「承辦廠商：桔中人娛樂文化有限公司」 |
 
 另外產出（不在 repo）：邀請碼便條 PDF，見第 7 節。
 
-### 最近一次變更（`e12083a`）重點
-- DB：`member_private.national_id / birthday / diet` 改為可 null；空字串一律轉 null；有填才檢查格式、檢查碼、性別一致、唯一。
-- 前端：`member.ts` 新增 `missingFields` / `REQUIRED_LATER`；隊員名單姓名旁有「待補」徽章、工具列「資料待補 N 人」篩選；後台總覽顯示待補人數；匯出的保險名冊顯示「已填 / 總人數」。
-- 批次匯入：只要姓名、性別兩欄即可（例如 `李小華	女`）。
-- 展示模式資料升版為 v7（部分展示隊員刻意留空，用來展示「待補」）。
+### 最近一次變更（`5800992` 委外廠商、`0f33e15` 頁尾）重點
+- DB（`20261123000000_vendor_role.sql`）：`vendors`（廠商名稱、邀請碼、帳號數）、`vendor_contacts`（帳號 ⇄ 廠商）；`is_vendor()`、`bind_vendor`、`join_vendor`、`my_vendor`、`lookup_invite`（取代 `lookup_team_invite`，可查隊伍或廠商邀請碼）、`vendor_teams()`（隊長電話隱碼）、`vendor_member_private()`（證號 / 生日 / 手機隱碼）；廠商對 `members`、`event_entries`、`org_squads`、`org_squad_members` 唯讀，對 `settings`、`events` 可 update（不可改項目代碼 / 類別 / 排序）；隊伍與廠商邀請碼不可重複；`member_private.diet` 新增 `meat_no_pork`。
+- 前端：`Role` 新增 `'vendor'`（`SessionInfo.vendorName`）；`/admin` 路由守衛改為 `staff`；廠商只看到「填報總覽、隊伍配置、健力報名、活動與項目設定」，`AdminData.readOnly` / `TeamPageData.isVendor` 控制唯讀；管理員在「窗口與邀請碼」最下方「委外廠商」區塊管理廠商邀請碼與帳號；`supabase.ts` 以 `vendorSession` 讓廠商改走隱碼 RPC；`src/lib/mask.ts` 為展示模式的隱碼實作。
+- `DataApi` 改名：`registerForTeam` → `registerWithInvite`、`lookupTeamInvite` → `lookupInvite`（`InviteInfo` / `JoinInput` 改為 `kind: 'team' | 'vendor'` 聯集）。
+- 展示模式資料升版為 v8：新增展示廠商「（範例）活動執行公司」（邀請碼 `VENDOR01`、帳號 `vendor@demo.local` / `demo`）；部分展示隊員用餐為「葷食不吃豬」。
+- 頁尾：`Layout.tsx` 的 `CREDITS` 常數（首頁大頁尾與內頁精簡頁尾都顯示在最下方）。
 
 ---
 
@@ -72,6 +76,14 @@
 - 邀請碼發給各隊代表；首次註冊必須先輸入邀請碼，不讓使用者自選隊伍；同一窗口可用同一信箱代表多隊。
 - 聯隊隱私：自己公司的隊員看得到完整個資；聯隊其他公司的隊員只看得到姓名、性別、用餐習慣。
 - 隊員只有姓名、性別必填，其餘可之後補。
+- 用餐習慣選項：葷食、葷食不吃豬、蛋奶素、全素。
+- 委外廠商：以廠商邀請碼「輸入邀請碼 → 註冊 → 登入」；管理員可建立**多組**廠商邀請碼（每組有廠商名稱、可註冊帳號數）。權限：
+  - 填報總覽、各隊隊員名單（姓名、性別、用餐、特殊需求、尺寸、已報項目）、項目報名、隊伍配置、健力報名（含下載 CSV）：**只能檢視**。
+  - 證號、生日、手機、**隊長電話**一律隱碼。
+  - 「活動與項目設定」**整頁可編輯**（含報名開關、截止時間、人數上下限；使用者已知會影響所有隊伍）。
+  - 「窗口與邀請碼」「匯出名單」看不到。
+  - 廠商帳號不能同時擔任隊伍窗口。
+- 頁尾最下方固定顯示：主辦單位：特耀餐飲服務股份有限公司；承辦廠商：桔中人娛樂文化有限公司。
 
 ---
 
@@ -90,8 +102,8 @@
 - 推送 `main` 即自動部署，推送前確認 `npm test` 與 `npm run build` 都通過。
 
 ### 資料庫 schema 變更流程
-1. 新增 `supabase/migrations/<timestamp>_<name>.sql`（時間戳接在 `20261122000000` 之後），**不要修改已套用的檔案**。
-2. 同步更新：`src/lib/types.ts`、`demo.ts`（模擬 RLS / trigger）、`rules.ts` 等前端規則（見 CLAUDE.md 的同步表）；展示資料結構變更時把 `demo.ts` 的 `STORAGE_KEY` 與 `demoSeed.ts` 的 version 一起升版（目前 v7）。
+1. 新增 `supabase/migrations/<timestamp>_<name>.sql`（時間戳接在 `20261123000000` 之後），**不要修改已套用的檔案**。
+2. 同步更新：`src/lib/types.ts`、`demo.ts`（模擬 RLS / trigger）、`rules.ts` 等前端規則（見 CLAUDE.md 的同步表）；展示資料結構變更時把 `demo.ts` 的 `STORAGE_KEY` 與 `demoSeed.ts` 的 version 一起升版（目前 v8）。
 3. 跑 `npx vitest run supabase/tests`、`npm test`、`npm run build`。
 4. 請使用者到 Supabase SQL Editor 執行該檔全文。使用者回覆「**SQL 已執行**」後，再提交 / 推送前端。
 5. 前端依賴新 schema 時，**SQL 套用前不可推送**（否則正式站會壞）。順序固定是「先 SQL → 再推送」，中間會有短暫的新舊不相容空窗。
@@ -133,17 +145,16 @@
 
 ### 測試與驗證技巧
 - 單元 + 資料庫測試：`npm test`（PGlite 實際跑全部 migration 並模擬 `auth.uid()`、anon / authenticated）。DB 測試輔助函式：`as`、`asAnon`、`addMembers`、`row`、`memberId`、`twId(gender, seq)`；測試用證號要注意性別碼（男 `A1…`、女 `B2…`），否則會先觸發「性別不符」。
-- 展示模式資料存在 localStorage `hexagon-sportday-demo-v7`；展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`）。
-- 內建瀏覽器窗格很窄，視覺檢查改用 playwright-core + 系統 Edge 截圖（之前的腳本放在舊工作階段的暫存資料夾，已不可用，需要時重新安裝 / 撰寫）。
+- 展示模式資料存在 localStorage `hexagon-sportday-demo-v8`；展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`），委外廠商為 `VENDOR01`；登入頁有各角色（含委外廠商）的快速登入按鈕。
+- 內建瀏覽器窗格很窄，視覺檢查改用 playwright-core + 系統 Edge 截圖（之前的腳本放在舊工作階段的暫存資料夾，已不可用，需要時重新安裝 / 撰寫）。窗格被隱藏時截圖會是全黑，改用 `javascript_tool` 讀 DOM 與 `getBoundingClientRect` 檢查版面。
 - 原生拖曳（HTML5 drag & drop）無法用 CDP 滑鼠事件驅動；測試拖曳邏輯請 dispatch 合成的 `DragEvent`（帶 `DataTransfer`），或用觸控的「點選人偶 → 點項目框」模式。
-- 用 Bash heredoc 跑 Python 改檔時，`\t` / `\n` 會被轉成真的 Tab / 換行而弄壞原始碼；請把改檔腳本寫成 `.py` 檔再執行，或直接用編輯工具。
+- 用 Bash heredoc 跑 Python 改檔時，`\t` / `\n` 會被轉成真的 Tab / 換行而弄壞原始碼；內容含反引號（JS 樣板字串）的 heredoc 在 Bash 工具中也會解析失敗。請先用 Write 工具把改檔腳本寫成 `.py`（放暫存資料夾）再執行，或直接用編輯工具。
 
 ---
 
 ## 8. 待辦與未驗證事項
 
-- [ ] **委外廠商 + 葷食不吃豬（2026-11-20）**：`20261123000000_vendor_role.sql` 已套用，並以 anon 確認 `lookup_invite` 存在、`my_vendor` / `vendor_teams` / `vendor_member_private` / `join_vendor` / `bind_vendor` 與 `vendors` 表對 anon 回 `42501`。正式站尚未實測廠商註冊與後台唯讀（避免建立測試資料）。
-
+- [ ] **委外廠商正式站實測**：`20261123000000_vendor_role.sql` 已套用（anon 呼叫 `lookup_invite` 回 P0001、其餘廠商函式與 `vendors` 表回 `42501`），前端已部署；但正式站尚未實測「管理員建立廠商邀請碼 → 廠商註冊 → 後台唯讀與隱碼」（避免在正式資料庫建立測試資料），請使用者以真正要給廠商的邀請碼實測。
 - [ ] **正式站實測**：只填姓名、性別新增一位隊員，確認可存檔（為避免在正式資料庫產生測試資料，交接前未實測；資料庫是否已允許 null 依使用者回報判斷）。若出現「欄位不可為空」之類錯誤，代表 `20261122` 未套用成功。
 - [ ] 競賽規則頁的 YouTube 示範影片：嵌入畫面在預覽窗格顯示為黑畫面，實際播放未驗證。
 - [ ] 邀請碼便條 PDF 未實際列印測試裁切。
