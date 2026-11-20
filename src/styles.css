@@ -1458,6 +1458,26 @@ textarea {
   padding: 1.5rem 0;
   border-top: 1px solid var(--line);
 }
+/* 頁尾最下方：主辦單位、承辦廠商 */
+.footer-credits {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 2rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: center;
+}
+.footer-full .footer-credits {
+  margin-top: 0;
+}
+.footer-credits-label {
+  color: var(--text-3);
+}
 .footer-links {
   display: flex;
   gap: 1.5rem;

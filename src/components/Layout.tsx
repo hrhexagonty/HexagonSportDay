@@ -38,9 +38,25 @@ function ShellEffects() {
   );
 }
 
+/** 主辦與承辦單位：顯示在每一頁頁尾的最下方 */
+const CREDITS = [
+  ['主辦單位', '特耀餐飲服務股份有限公司'],
+  ['承辦廠商', '桔中人娛樂文化有限公司'],
+] as const;
+
 function Footer({ full }: { full: boolean }) {
   const { session } = useAuth();
   const year = new Date().getFullYear();
+  const credits = (
+    <div className="footer-credits">
+      {CREDITS.map(([label, name]) => (
+        <span key={label}>
+          <span className="footer-credits-label">{label}：</span>
+          {name}
+        </span>
+      ))}
+    </div>
+  );
   const bottom = (
     <div className="footer-bottom">
       <span>© {year} Hexagon Sport Day</span>
@@ -56,7 +72,14 @@ function Footer({ full }: { full: boolean }) {
     </div>
   );
 
-  if (!full) return <footer className="footer">{bottom}</footer>;
+  if (!full) {
+    return (
+      <footer className="footer">
+        {bottom}
+        {credits}
+      </footer>
+    );
+  }
 
   return (
     <footer className="footer footer-full">
@@ -71,6 +94,7 @@ function Footer({ full }: { full: boolean }) {
         </Link>
       </div>
       {bottom}
+      {credits}
     </footer>
   );
 }
