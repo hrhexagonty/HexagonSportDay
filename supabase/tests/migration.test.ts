@@ -20,6 +20,8 @@ const U = {
   f: '00000000-0000-0000-0000-0000000000f2', // 戊公司（戊一隊）窗口
   g: '00000000-0000-0000-0000-0000000000f3', // 戊公司（戊二隊）窗口
   h: '00000000-0000-0000-0000-0000000000f4', // 己公司窗口
+  v1: '00000000-0000-0000-0000-0000000000e2', // 委外廠商
+  v2: '00000000-0000-0000-0000-0000000000e3', // 委外廠商（名額已滿時註冊）
 };
 const org: Record<string, string> = {};
 const team: Record<string, string> = {};
@@ -518,5 +520,179 @@ describe('公司組隊（健力）', () => {
     await as(U.f, `update events set rules = 'x' where id = 'fun1'`);
     const r = await db.query<{ rules: string }>(`select rules from events where id = 'fun1'`);
     expect(r.rows[0].rules).toBe('');
+  });
+});
+
+describe('用餐習慣', () => {
+  it('新增「葷食不吃豬」，其他值仍被擋', async () => {
+    const id = await memberId('戊一男3');
+    await as(U.f, `update member_private set diet = 'meat_no_pork' where member_id = $1`, [id]);
+    await expect(as(U.f, `update member_private set diet = 'pork' where member_id = $1`, [id])).rejects.toThrow('diet');
+    const r = await db.query<{ diet: string }>('select diet from member_private where member_id = $1', [id]);
+    expect(r.rows[0].diet).toBe('meat_no_pork');
+  });
+});
+
+describe('委外廠商', () => {
+  let code = '';
+  const count = async (user: string | null, table: string) => {
+    const sql = `select count(*)::int n from ${table}`;
+    return (user ? await as<{ n: number }>(user, sql) : await db.query<{ n: number }>(sql)).rows[0].n;
+  };
+
+  it('只有管理員能建立廠商邀請碼；廠商邀請碼不可與隊伍邀請碼重複', async () => {
+    await expect(as(U.f, `insert into vendors (name) values ('X')`)).rejects.toThrow('row-level security');
+    code = (
+      await as<{ invite_code: string }>(U.admin, `insert into vendors (name, account_limit) values ('執行公司', 1) returning invite_code`)
+    ).rows[0].invite_code;
+    expect(code).toMatch(/^[0-9A-F]{8}$/);
+    expect((await as(U.f, 'select * from vendors')).rows).toEqual([]);
+    await expect(asAnon('select * from vendors')).rejects.toThrow('permission denied');
+    await expect(as(U.admin, `insert into vendors (name) values ('  ')`)).rejects.toThrow('vendors_name_check');
+
+    const teamCode = await codeOf('戊一隊', '戊');
+    await expect(as(U.admin, 'update vendors set invite_code = $1', [teamCode])).rejects.toThrow('已被使用');
+    await expect(
+      as(U.admin, 'update team_invites set invite_code = $1 where invite_code = $2', [code, teamCode]),
+    ).rejects.toThrow('已被使用');
+  });
+
+  it('未登入以邀請碼查出身分：廠商邀請碼回傳廠商名稱，隊伍邀請碼回傳隊伍與公司', async () => {
+    const v = await asAnon('select kind, vendor_name, is_full, team_id from lookup_invite($1)', [` ${code.toLowerCase()} `]);
+    expect(v.rows).toEqual([{ kind: 'vendor', vendor_name: '執行公司', is_full: false, team_id: null }]);
+    const t = await asAnon('select kind, team_id, team_name, org_name, vendor_name from lookup_invite($1)', [
+      await codeOf('戊一隊', '戊'),
+    ]);
+    expect(t.rows).toEqual([{ kind: 'team', team_id: team.w1, team_name: '戊一隊', org_name: '戊', vendor_name: null }]);
+    await expect(asAnon('select * from lookup_invite($1)', ['NOPE0000'])).rejects.toThrow('邀請碼錯誤');
+  });
+
+  it('以廠商邀請碼註冊；名額已滿或邀請碼錯誤則整筆註冊失敗', async () => {
+    await signUp(U.v1, 'v1@x.tw', { vendor_code: code.toLowerCase() });
+    expect((await as(U.v1, 'select my_vendor() name')).rows).toEqual([{ name: '執行公司' }]);
+    expect((await as(U.f, 'select my_vendor() name')).rows).toEqual([{ name: null }]);
+    expect((await as(U.v1, 'select team_id from my_teams()')).rows).toEqual([]);
+
+    await expect(signUp(U.v2, 'v2@x.tw', { vendor_code: code })).rejects.toThrow('名額已滿');
+    await expect(signUp(U.v2, 'v2@x.tw', { vendor_code: 'WRONG000' })).rejects.toThrow('邀請碼錯誤');
+    expect((await db.query('select 1 from profiles where id = $1', [U.v2])).rows).toHaveLength(0);
+    expect((await asAnon<{ is_full: boolean }>('select is_full from lookup_invite($1)', [code])).rows[0].is_full).toBe(true);
+  });
+
+  it('委外廠商帳號與隊伍窗口帳號不能互相兼任', async () => {
+    await as(U.admin, 'update vendors set account_limit = 5');
+    await expect(as(U.v1, 'select join_team($1, $2)', [team.j, await codeOf('己隊', '己')])).rejects.toThrow(
+      '委外廠商帳號不能擔任隊伍窗口',
+    );
+    await expect(as(U.f, 'select join_vendor($1)', [code])).rejects.toThrow('已是隊伍窗口');
+    await expect(as(U.admin, 'select join_vendor($1)', [code])).rejects.toThrow('管理員');
+    await expect(as(U.v1, 'select join_vendor($1)', [code])).rejects.toThrow('已是委外廠商帳號');
+  });
+
+  it('委外廠商看得到所有隊員、報名與健力隊伍；個資與隊長電話只拿得到隱碼', async () => {
+    const id = await memberId('戊一女1');
+    await as(U.admin, `update member_private set phone = '0912345678', special_needs = '花生過敏', shirt_size = 'M' where member_id = $1`, [
+      id,
+    ]);
+    await as(U.admin, `update teams set captain_name = '戊隊長', captain_phone = '0987654321' where id = $1`, [team.w1]);
+
+    for (const t of ['members', 'event_entries', 'org_squads', 'org_squad_members']) {
+      expect(await count(U.v1, t)).toBe(await count(null, t));
+    }
+    expect(await count(U.v1, 'members')).toBeGreaterThan(10);
+    // 個資、隊伍、邀請碼、公司、窗口名單直接查詢都拿不到
+    for (const t of ['member_private', 'teams', 'team_orgs', 'team_invites', 'organizations', 'team_contacts', 'vendors']) {
+      expect(await count(U.v1, t)).toBe(0);
+    }
+
+    const raw = (await db.query<{ national_id: string }>('select national_id from member_private where member_id = $1', [id])).rows[0];
+    const priv = await as(
+      U.v1,
+      'select national_id, birthday, phone, shirt_size, diet, special_needs from vendor_member_private() where member_id = $1',
+      [id],
+    );
+    expect(priv.rows).toEqual([
+      {
+        national_id: `${raw.national_id.slice(0, 3)}****${raw.national_id.slice(-3)}`,
+        birthday: '1990-**-**',
+        phone: '0912***678',
+        shirt_size: 'M',
+        diet: 'meat',
+        special_needs: '花生過敏',
+      },
+    ]);
+    // 太短的手機全部隱藏
+    const short = await as(U.v1, 'select phone from vendor_member_private($1) where member_id = $2', [
+      team.w1,
+      await memberId('戊一男1'),
+    ]);
+    expect(short.rows).toEqual([{ phone: '****' }]);
+
+    const teams = await as(U.v1, 'select name, captain_name, captain_phone, org_ids from vendor_teams($1)', [team.w1]);
+    expect(teams.rows).toEqual([{ name: '戊一隊', captain_name: '戊隊長', captain_phone: '0987***321', org_ids: [org['戊']] }]);
+    expect((await as(U.v1, 'select id from vendor_teams()')).rows).toHaveLength(await count(null, 'teams'));
+
+    // 不是委外廠商：查不到；訪客無權呼叫
+    expect((await as(U.f, 'select * from vendor_member_private()')).rows).toEqual([]);
+    expect((await as(U.f, 'select * from vendor_teams()')).rows).toEqual([]);
+    await expect(asAnon('select * from vendor_teams()')).rejects.toThrow('permission denied');
+  });
+
+  it('委外廠商不能新增、修改、刪除隊員、報名、隊伍與健力隊伍', async () => {
+    const id = await memberId('戊一男4');
+    await expect(addMembers(U.v1, team.w1, org['戊'], [row('廠商X', 'M', twId('M', 950))])).rejects.toThrow('row-level security');
+    await expect(as(U.v1, 'select update_member($1, $2)', [id, JSON.stringify({ name: '改名', gender: 'M' })])).rejects.toThrow('無權限');
+    expect((await as(U.v1, `update members set name = '改名' where id = $1`, [id])).affectedRows).toBe(0);
+    expect((await as(U.v1, 'delete from members where id = $1', [id])).affectedRows).toBe(0);
+    await expect(as(U.v1, `insert into event_entries (event_id, member_id) values ('fun3', $1)`, [id])).rejects.toThrow(
+      'row-level security',
+    );
+    expect((await as(U.v1, 'delete from event_entries')).affectedRows).toBe(0);
+    expect((await as(U.v1, `update teams set captain_name = '廠商'`)).affectedRows).toBe(0);
+    await expect(as(U.v1, 'select set_team_orgs($1, $2)', [team.w1, []])).rejects.toThrow('權限不足');
+    await expect(as(U.v1, `select create_team('廠商隊', null, null, '{}')`)).rejects.toThrow('活動小組');
+    await expect(
+      as(U.v1, 'insert into org_squads (org_id, event_id) values ($1, $2)', [org['戊'], 'powerlifting']),
+    ).rejects.toThrow('row-level security');
+    expect((await as(U.v1, 'update org_squads set submitted_at = null')).affectedRows).toBe(0);
+    expect((await as(U.v1, 'delete from org_squad_members')).affectedRows).toBe(0);
+    expect((await as(U.v1, 'delete from org_squads')).affectedRows).toBe(0);
+    expect((await as(U.v1, `update team_invites set invite_code = 'VENDOR99'`)).affectedRows).toBe(0);
+    await expect(as(U.v1, 'select purge_private_data()')).rejects.toThrow('權限不足');
+  });
+
+  it('委外廠商可編輯活動設定與比賽項目，但不能新增、刪除項目或改類別', async () => {
+    await as(U.v1, `update settings set venue = '廠商場地' where id = 1`);
+    await as(U.v1, `update events set rules = '廠商規則', max_per_team = 12 where id = 'fun1'`);
+    const r = await db.query<{ venue: string; rules: string; max: number }>(
+      `select s.venue, e.rules, e.max_per_team max from settings s, events e where e.id = 'fun1'`,
+    );
+    expect(r.rows[0]).toEqual({ venue: '廠商場地', rules: '廠商規則', max: 12 });
+    await expect(as(U.v1, `update events set category = 'powerlifting' where id = 'fun1'`)).rejects.toThrow('活動小組');
+    await expect(as(U.v1, `update events set video_url = 'javascript:alert(1)' where id = 'fun1'`)).rejects.toThrow('video_url');
+    await expect(
+      as(U.v1, `insert into events (id, name, category, max_per_team) values ('x', 'x', 'fun', 1)`),
+    ).rejects.toThrow('row-level security');
+    expect((await as(U.v1, `delete from events where id = 'fun4'`)).affectedRows).toBe(0);
+    // 一般窗口仍不能改
+    expect((await as(U.f, `update settings set venue = '窗口' where id = 1`)).affectedRows).toBe(0);
+    await as(U.admin, `update events set max_per_team = 10 where id = 'fun1'`);
+  });
+
+  it('管理員可看到廠商帳號並解除，解除後立即失去權限；刪除廠商時帳號綁定一併移除', async () => {
+    expect((await as(U.admin, 'select user_id from vendor_contacts')).rows).toEqual([{ user_id: U.v1 }]);
+    expect((await as(U.v1, 'select user_id from vendor_contacts')).rows).toEqual([{ user_id: U.v1 }]);
+    expect((await as(U.f, 'select * from vendor_contacts')).rows).toEqual([]);
+    expect((await as(U.v1, 'delete from vendor_contacts')).affectedRows).toBe(0);
+
+    await as(U.admin, 'delete from vendor_contacts where user_id = $1', [U.v1]);
+    expect((await as(U.v1, 'select id from members')).rows).toEqual([]);
+    expect((await as(U.v1, 'select * from vendor_teams()')).rows).toEqual([]);
+    expect((await as(U.v1, `update settings set venue = 'x' where id = 1`)).affectedRows).toBe(0);
+    // 已註冊的帳號可用邀請碼重新綁定
+    expect((await as(U.v1, 'select join_vendor($1) name', [code])).rows).toEqual([{ name: '執行公司' }]);
+
+    await as(U.admin, 'delete from vendors');
+    expect((await db.query('select * from vendor_contacts')).rows).toEqual([]);
   });
 });

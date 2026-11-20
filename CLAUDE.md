@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 專案概要
 
-大型運動會（約 24 隊、900 人）報名平台：管理員預先建立公司與隊伍，並以拖曳把公司放到隊伍底下（一隊有多家公司 = 聯隊；一家公司可加入多隊）；各隊窗口在前台「輸入邀請碼 → 確認隊伍 → 設定信箱密碼」註冊後，填寫隊員（含身分證等個資），並以拖曳人偶為 4 項趣味競賽（同心鼓顛球、四關障礙接力、嗨ROX競賽、毛毛蟲大隊接力）安排選手；健力比賽改在「我的公司」以公司為單位組隊（每隊 10 人、女性下限依項目設定）。前台另有「競賽規則」頁（規則文字 + 示範影片連結，由管理員於後台編輯）。
+大型運動會（約 24 隊、900 人）報名平台：管理員預先建立公司與隊伍，並以拖曳把公司放到隊伍底下（一隊有多家公司 = 聯隊；一家公司可加入多隊）；各隊窗口在前台「輸入邀請碼 → 確認隊伍 → 設定信箱密碼」註冊後，填寫隊員（含身分證等個資），並以拖曳人偶為 4 項趣味競賽（同心鼓顛球、四關障礙接力、嗨ROX競賽、毛毛蟲大隊接力）安排選手；健力比賽改在「我的公司」以公司為單位組隊（每隊 10 人、女性下限依項目設定）。前台另有「競賽規則」頁（規則文字 + 示範影片連結，由管理員於後台編輯）。另有「委外廠商」角色：以廠商邀請碼註冊，唯讀檢視後台大部分資料（個資隱碼），可編輯活動與項目設定。
 技術：Vite + React 19 + TypeScript（前端，部署 GitHub Pages）＋ Supabase（Postgres / Auth / RLS）。
 
 ## 常用指令
@@ -28,8 +28,9 @@ npm run build                                # typecheck + vite build → dist/
 ### 資料存取層：一個介面、兩種實作
 - 頁面一律透過 `src/lib/api/index.ts` 匯出的 `api`（`DataApi`，定義於 `src/lib/api/types.ts`）讀寫資料，**不要在頁面直接呼叫 supabase-js**。
 - 有設定 `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` → `supabase.ts`；否則 → `demo.ts`（展示模式，localStorage，key 含版本號，資料結構變更時要升版）。
-- `demo.ts` 必須模擬 Supabase 端的 RLS 可見範圍與 DB trigger 限制，兩種模式行為才會一致；新增 `DataApi` 方法時兩邊都要實作。展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`）。
-- 需要多表同交易寫入或跨權限讀取的操作走 RPC（`create_team`、`set_team_orgs`、`add_members`、`update_member`、`purge_private_data`、`join_team`、`lookup_team_invite`、`my_teams`、`org_names`、`org_roster`、`member_diets`），不要在前端拆成多次寫入。
+- `demo.ts` 必須模擬 Supabase 端的 RLS 可見範圍與 DB trigger 限制，兩種模式行為才會一致；新增 `DataApi` 方法時兩邊都要實作。展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`），委外廠商邀請碼為 `VENDOR01`（展示帳號 `vendor@demo.local`）。
+- 需要多表同交易寫入或跨權限讀取的操作走 RPC（`create_team`、`set_team_orgs`、`add_members`、`update_member`、`purge_private_data`、`join_team`、`join_vendor`、`lookup_invite`、`my_teams`、`my_vendor`、`org_names`、`org_roster`、`member_diets`、`vendor_teams`、`vendor_member_private`），不要在前端拆成多次寫入。`lookup_team_invite` 已由 `lookup_invite` 取代，保留只為相容舊版前端。
+- `supabase.ts` 在 `getSession` 時記住是否為委外廠商（`vendorSession`）：廠商的 `listTeams` / `getTeam` / `listMembers` 改走隱碼 RPC。登入後的頁面都在 `AuthProvider` 讀完 session 後才載入，因此可依賴這個狀態。
 - Supabase 單次查詢上限 1000 筆，名單 / 報名紀錄用 `supabase.ts` 的 `fetchAll` 分頁抓取。
 
 ### 資料模型與可見範圍（RLS）
@@ -37,11 +38,15 @@ npm run build                                # typecheck + vite build → dist/
 登入以「隊伍」為單位：`team_invites`（隊伍 × 公司各一組邀請碼）、`team_contacts`（帳號 ⇄ 隊伍，多對多，記錄以哪家公司身分加入）。
 公司組隊（健力）：`org_squads`（公司 × 項目，`submitted_at` 為 null = 草稿）→ `org_squad_members`（`event_id` 由 trigger 帶入，`unique (event_id, member_id)` = 一人只能參加一隊）。
 - **隊伍與公司只由管理員建立**（`create_team` 限管理員，可不指定公司 = 未分配）；後台「隊伍配置」（`src/pages/admin/TeamSetup.tsx`）把公司拖到隊伍卡上，以 `set_team_orgs` 存檔。`team_orgs` 有多家公司即為聯隊；新增 `team_orgs` 時 trigger 自動產生該組邀請碼，移除時邀請碼與窗口綁定一併刪除（仍有隊員則拒絕）。刪除公司不會刪除隊伍。
-- **窗口綁定**：`bind_team_contact`（內部函式）檢查邀請碼與所選隊伍相符、`teams.contact_limit` 未滿（advisory lock 防並行超額）。註冊時前端把 `team_id`、`invite_code` 放進 signUp 的 user metadata，由 `handle_new_user` trigger 一併綁定，失敗則整筆註冊失敗（不會留下無隊伍帳號，也不受 Confirm email 影響）；已登入帳號用 `join_team` 加入其他隊伍。同一位窗口代表多隊時共用一個帳號（Supabase 一個信箱只能一個帳號）：`registerForTeam` 遇到已註冊的信箱會以原本的密碼登入再呼叫 `join_team`。
+- **窗口綁定**：`bind_team_contact`（內部函式）檢查邀請碼與所選隊伍相符、`teams.contact_limit` 未滿（advisory lock 防並行超額）。註冊時前端把 `team_id`、`invite_code` 放進 signUp 的 user metadata，由 `handle_new_user` trigger 一併綁定，失敗則整筆註冊失敗（不會留下無隊伍帳號，也不受 Confirm email 影響）；已登入帳號用 `join_team` 加入其他隊伍。同一位窗口代表多隊時共用一個帳號（Supabase 一個信箱只能一個帳號）：`registerWithInvite` 遇到已註冊的信箱會以原本的密碼登入再呼叫 `join_team`（委外廠商為 `join_vendor`）。
 - `members`（姓名、性別、所屬公司 `org_id`）：同隊窗口都看得到，用於安排項目選手；但只能新增 / 修改 / 刪除**自己以該公司身分加入（`is_team_org_contact`）**的隊員。`(team_id, org_id)` 有複合外鍵指向 `team_orgs`。
 - `member_private`（身分證 / 居留證、生日、手機、尺寸、用餐、特殊需求）：**只有「該隊 × 該公司」的窗口與管理員**看得到；前端 `Member.private === null` 代表無權檢視或已被清除。例外是用餐習慣：聯隊其他公司的窗口也要看得到，透過唯讀的 `member_diets()` 只開放 `diet` 一欄（前端為 `Member.diet`），不要為此放寬 `member_private` 的 RLS。`national_id` 全活動唯一。
 - 隊員只有**姓名、性別必填**：`member_private` 的證號、生日、用餐都可為 null（新增隊員時一律建立 `member_private` 列，未填欄位存 null；有填才檢查格式、檢查碼、性別一致、唯一）。名單以 `member.ts` 的 `missingFields` 標示「待補」，不阻擋任何寫入或報名。
-- `organizations`、`team_invites`、他人的 `team_contacts` 只有管理員讀得到；窗口取公司名稱用 `org_names()`，取自己的隊伍用 `my_teams()`；未登入的註冊頁只能用 `lookup_team_invite(邀請碼)` 查出對應隊伍與公司，前台不公開隊伍清單。
+- `organizations`、`team_invites`、他人的 `team_contacts` 只有管理員讀得到；窗口取公司名稱用 `org_names()`，取自己的隊伍用 `my_teams()`；未登入的註冊頁只能用 `lookup_invite(邀請碼)` 查出對應隊伍與公司（或委外廠商），前台不公開隊伍清單。隊伍與廠商邀請碼共用輸入框，`invite_code_unique_across` trigger 確保兩表不重複。
+- **委外廠商**（`SessionInfo.role = 'vendor'`）：`vendors`（廠商名稱、邀請碼、`account_limit`，僅管理員可讀寫，後台「窗口與邀請碼」下方管理）→ `vendor_contacts`（帳號 ⇄ 廠商，一個帳號一家）。`profiles.role` 仍為 `org_admin`，身分由 `is_vendor()`（有 `vendor_contacts` 列）判定，管理員解除或刪除廠商即失去權限。註冊時 user metadata 帶 `vendor_code`，由 `handle_new_user` 呼叫 `bind_vendor`；廠商帳號與隊伍窗口不可兼任（`bind_vendor` / `bind_team_contact` 互擋）。
+  - 可見範圍：`members`、`event_entries`、`org_squads`、`org_squad_members` 有唯讀 select 政策；**不能直接讀 `teams`、`team_orgs`、`member_private`**，改由 `vendor_teams()`（隊長電話隱碼）、`vendor_member_private()`（證號 `A12****789`、生日 `1990-**-**`、手機 `0912***678`；尺寸、用餐、特殊需求照常）取得。看不到 `organizations`（用 `org_names()`）、`team_invites`、`team_contacts`、`vendors`。
+  - 可寫入：只有 `settings`、`events` 的 update（`events_before_update` 擋下非管理員改 `id` / `category` / `sort_order`）；其餘寫入一律被 RLS 擋下。
+  - 前端：`/admin` 路由守衛為 `staff`（管理員或廠商）；廠商只顯示「填報總覽、隊伍配置、健力報名、活動與項目設定」分頁，`AdminData.readOnly = true` 時隊伍配置與健力報名隱藏所有編輯操作；隊伍頁 `TeamPageData.isVendor` 時 `editable = false`。
 - 窗口可改隊長資料，隊名與 `contact_limit` 只有管理員能改（`teams_before_update` trigger）；刪除隊伍限管理員。
 - `event_entries` 不存 team_id，隊伍經由 member 推得；聯隊內任一公司都可為全隊安排選手。
 - 公司組隊：該公司**任一隊**的窗口（`is_org_contact`）都能看同仁名單 `org_roster()`（跨分隊，只有姓名 / 性別 / 分隊，不含個資）並管理該公司的隊伍；可組多隊。只能選同公司同仁、不超過人數上限；送出時檢查人數與女性下限；已送出的隊伍不能加減人、刪除，也不能刪除其中的隊員（需先取消送出）；管理員不受此限。截止後只有管理員能異動。
@@ -56,10 +61,13 @@ npm run build                                # typecheck + vite build → dist/
 | 身分證 / 居留證檢查碼、性別與證號一致、生日不可在未來（皆為選填，有填才檢查；空字串視為 null） | `tw_id_valid`、`tw_id_gender`、`member_private_before_write`、`add_members` / `update_member` | `src/lib/idNumber.ts`、`src/lib/member.ts`、`src/lib/importParse.ts` |
 | 公司組隊：一人一隊、人數上限、送出時人數與女性下限、已送出不可調整 | `org_squads_before_write`、`org_squad_members_before_write` | `rules.ts` 的 `checkAddSquadMember`、`checkSubmitSquad`、`evaluateSquad` |
 | 示範影片連結只接受 http/https | `events.video_url` check | `src/lib/video.ts` |
+| 用餐習慣選項（meat / meat_no_pork / ovo_lacto / vegan） | `member_private_diet_check` | `types.ts` 的 `DIETS`、`member.ts` 的 `DIET_MAP`（匯入文字對照） |
+| 委外廠商隱碼（證號前 3 後 3、手機前 4 後 3、生日只留年份；太短全遮） | `mask_middle`、`vendor_member_private`、`vendor_teams` | `src/lib/mask.ts`（展示模式） |
+| 委外廠商帳號數上限、不可兼任窗口、邀請碼不可與隊伍邀請碼重複 | `bind_vendor`、`bind_team_contact`、`invite_code_unique_across` | `demo.ts` 的 `bindVendor`、`bind`、`codeTaken` |
 | 人數 / 女性下限（「未完成」，不阻擋寫入） | — | `rules.ts` 的 `evaluate*` |
 
 另外需同步的重複資料：比賽項目初始資料（migration 尾端 ↔ `src/lib/api/demoSeed.ts` 的 `DEMO_EVENTS`）、資料表欄位（migration ↔ `src/lib/types.ts`）。
-`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入）已於 2026-11-18 套用；`20261119000000_invite_first.sql`（先輸入邀請碼）已於 2026-11-18 套用；`20261120000000_company_squads.sql`（競賽規則欄位、公司組隊、`org_roster`）已於 2026-11-19 套用；`20261121000000_member_diets.sql`（聯隊其他公司可看用餐習慣）已於 2026-11-19 套用；`20261122000000_optional_member_fields.sql`（證號、生日、用餐改為選填）已於 2026-11-19 套用。已套用的 migration 不可再修改。前端依賴新 schema 時，SQL 套用並確認前不可推送。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
+`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入）已於 2026-11-18 套用；`20261119000000_invite_first.sql`（先輸入邀請碼）已於 2026-11-18 套用；`20261120000000_company_squads.sql`（競賽規則欄位、公司組隊、`org_roster`）已於 2026-11-19 套用；`20261121000000_member_diets.sql`（聯隊其他公司可看用餐習慣）已於 2026-11-19 套用；`20261122000000_optional_member_fields.sql`（證號、生日、用餐改為選填）已於 2026-11-19 套用；`20261123000000_vendor_role.sql`（用餐新增「葷食不吃豬」、委外廠商角色）已於 2026-11-20 套用。已套用的 migration 不可再修改。前端依賴新 schema 時，SQL 套用並確認前不可推送。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
 
 ### 環境
 - 本機 `.env.local`（不提交）已指向**正式** Supabase：`npm run dev` 的操作會寫入正式資料庫。測試請用 `npm run dev:demo`（`.claude/launch.json` 的 `dev-demo`，port 5174）。
@@ -68,7 +76,7 @@ npm run build                                # typecheck + vite build → dist/
 
 ### 前端路由與部署
 - 使用 `HashRouter` + `vite.config.ts` 的 `base: './'`（GitHub Pages 無 SPA fallback）；頁內錨點不可用 `href="#..."`，請用 `scrollIntoView`。
-- 路由守衛 `src/auth/RequireAuth.tsx`：`admin`、`org`（需綁定至少一隊的窗口：`/org` = 我的隊伍、`/company` = 我的公司（健力報名），代表多家公司時以 `?org=` 切換）、`member`（窗口或管理員，用於 `/teams/:id`）、`any`（`/join` 加入其他隊伍）。`/rules`（競賽規則）不需登入，但導覽列只在登入後顯示。`homePathFor`：只綁一隊的窗口登入後直接進該隊頁。
+- 路由守衛 `src/auth/RequireAuth.tsx`：`staff`（管理員或委外廠商，`/admin`）、`org`（需綁定至少一隊的窗口：`/org` = 我的隊伍、`/company` = 我的公司（健力報名），代表多家公司時以 `?org=` 切換）、`member`（窗口、管理員或委外廠商，用於 `/teams/:id`）、`any`（`/join` 加入其他隊伍；只接受隊伍邀請碼）。`/rules`（競賽規則）不需登入，但導覽列只在登入後顯示。`homePathFor`：管理員與委外廠商進後台，只綁一隊的窗口登入後直接進該隊頁。
 - `SessionInfo.teams` 為帳號綁定的隊伍與代表公司；隊伍頁以此決定 `myOrgId`（可編輯 / 檢視個資的公司）。
 - 批次匯入欄位順序定義在 `src/lib/importParse.ts` 的 `IMPORT_COLUMNS`（生日支援民國年）。
 - 部署：`.github/workflows/deploy.yml` 推送 `main` 即測試 + 建置 + 部署；Supabase 連線資訊放 GitHub Actions secrets。

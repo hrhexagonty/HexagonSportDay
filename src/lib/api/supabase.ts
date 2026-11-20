@@ -14,8 +14,10 @@ import type {
   Team,
   TeamContact,
   TeamInvite,
+  Vendor,
+  VendorContact,
 } from '../types';
-import type { DataApi, SessionInfo, SessionTeam } from './types';
+import type { DataApi, InviteInfo, SessionInfo, SessionTeam } from './types';
 
 const PAGE_SIZE = 1000; // Supabase 預設單次最多回傳 1000 筆
 
@@ -33,6 +35,8 @@ function translateError(error: PostgrestError): string {
   if (error.code === '23514' && text.includes('national_id')) return '身分證字號格式或檢查碼錯誤';
   if (error.code === '23514' && text.includes('invite_code')) return '邀請碼需為 6–20 位英文字母或數字';
   if (error.code === '23514' && text.includes('video_url')) return '影片連結需以 http:// 或 https:// 開頭';
+  if (error.code === '23514' && text.includes('vendors_name')) return '請輸入廠商名稱';
+  if (error.code === '23514' && text.includes('account_limit')) return '帳號數需為 0 以上的整數';
   if (error.code === '23503' && text.includes('members_team_org_fkey')) return '此公司未參與該隊伍';
   if (error.code === '42501') return '權限不足';
   // P0001 為 trigger / RPC 主動丟出的中文訊息，直接顯示
@@ -45,7 +49,7 @@ function translateAuthError(message: string): string {
   if (/already registered/i.test(message)) return '此信箱已註冊：請改用「登入」，登入後可在「我的隊伍」輸入邀請碼加入其他隊伍';
   if (/password should be at least/i.test(message)) return '密碼長度不足';
   // handle_new_user 綁定隊伍失敗（例如檢查後名額剛好被搶走）時，Supabase 只回傳這句
-  if (/database error saving new user/i.test(message)) return '註冊失敗：邀請碼可能已失效或窗口名額已滿，請重新確認';
+  if (/database error saving new user/i.test(message)) return '註冊失敗：邀請碼可能已失效或名額已滿，請重新確認';
   return message;
 }
 
@@ -71,6 +75,10 @@ const toMember = ({ member_private, ...m }: MemberRow): Member => ({
   private: member_private ?? null,
 });
 
+/** 委外廠商讀取的隊伍（vendor_teams()：隊長電話已隱碼） */
+type VendorTeamRow = Team & { created_at: string };
+const fromVendorTeam = ({ created_at: _, ...t }: VendorTeamRow): Team => ({ ...t, org_ids: t.org_ids ?? [] });
+
 type SquadRow = Omit<OrgSquad, 'member_ids'> & { org_squad_members: { member_id: string; created_at: string }[] | null };
 const SQUAD_SELECT = 'id, org_id, event_id, submitted_at, created_at, org_squad_members(member_id, created_at)';
 const toSquad = ({ org_squad_members, ...s }: SquadRow): OrgSquad => ({
@@ -82,6 +90,11 @@ const toSquad = ({ org_squad_members, ...s }: SquadRow): OrgSquad => ({
 
 export function createSupabaseApi(url: string, key: string): DataApi {
   const sb = createClient(url, key);
+  /**
+   * 目前登入者是否為委外廠商（每次 getSession 更新；登入後的頁面都在 AuthProvider 讀完 session 才載入資料）。
+   * 委外廠商不能直接讀 teams、member_private，改走資料庫隱碼後的 vendor_teams()、vendor_member_private()
+   */
+  let vendorSession = false;
 
   /** 分頁抓取全部資料（900 人規模的報名紀錄會超過單次上限） */
   async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<Result<T[] | null>>): Promise<T[]> {
@@ -93,7 +106,13 @@ export function createSupabaseApi(url: string, key: string): DataApi {
     }
   }
 
+  async function vendorTeams(teamId?: string): Promise<Team[]> {
+    const rows = (await run(sb.rpc('vendor_teams', { p_team_id: teamId ?? null }))) as VendorTeamRow[] | null;
+    return (rows ?? []).map(fromVendorTeam);
+  }
+
   async function getTeam(id: string): Promise<Team | null> {
+    if (vendorSession) return (await vendorTeams(id))[0] ?? null;
     const row = await run(sb.from('teams').select(TEAM_SELECT).eq('id', id).maybeSingle());
     return row ? toTeam(row as unknown as TeamRow) : null;
   }
@@ -105,18 +124,25 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       const {
         data: { session },
       } = await sb.auth.getSession();
-      if (!session) return null;
-      const [profile, teams] = await Promise.all([
+      if (!session) {
+        vendorSession = false;
+        return null;
+      }
+      const [profile, teams, vendorName] = await Promise.all([
         run(sb.from('profiles').select('role').eq('id', session.user.id).maybeSingle()),
         run(sb.rpc('my_teams')) as Promise<{ team_id: string; team_name: string; org_id: string; org_name: string }[]>,
+        run(sb.rpc('my_vendor')) as Promise<string | null>,
       ]);
+      const role = profile?.role === 'super_admin' ? 'super_admin' : vendorName ? 'vendor' : 'org_admin';
+      vendorSession = role === 'vendor';
       return {
         userId: session.user.id,
         email: session.user.email ?? '',
-        role: profile?.role ?? 'org_admin',
+        role,
         teams: (teams ?? []).map(
           (t): SessionTeam => ({ teamId: t.team_id, teamName: t.team_name, orgId: t.org_id, orgName: t.org_name }),
         ),
+        vendorName: role === 'vendor' ? vendorName : null,
       };
     },
 
@@ -133,15 +159,15 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       if (error) throw new Error(translateAuthError(error.message));
     },
 
-    async registerForTeam(email, password, join) {
+    async registerWithInvite(email, password, join) {
       const code = normalizeInviteCode(join.inviteCode);
-      // 隊伍與邀請碼放在 user metadata，由 DB 的 handle_new_user 於建立帳號時一併綁定
+      // 隊伍與邀請碼（或廠商邀請碼）放在 user metadata，由 DB 的 handle_new_user 於建立帳號時一併綁定
       const { data, error } = await sb.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: window.location.origin + window.location.pathname,
-          data: { team_id: join.teamId, invite_code: code },
+          data: join.kind === 'vendor' ? { vendor_code: code } : { team_id: join.teamId, invite_code: code },
         },
       });
       // 信箱已註冊：關閉 Confirm email 時回傳錯誤；開啟時回傳沒有 identities 的假使用者
@@ -150,19 +176,23 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       if (!exists) return { needsEmailConfirm: !data.session, existingAccount: false };
 
       // 同一位窗口代表多隊：以原本的密碼登入後，把這一隊加入同一個帳號
+      // （委外廠商：被解除後以同一個帳號重新綁定）
       const signIn = await sb.auth.signInWithPassword({ email, password });
       if (signIn.error) {
         throw new Error(
           /invalid login credentials/i.test(signIn.error.message)
-            ? '此信箱已註冊：請輸入該帳號原本的密碼，即可把這一隊加入同一個帳號'
+            ? join.kind === 'vendor'
+              ? '此信箱已註冊：請輸入該帳號原本的密碼'
+              : '此信箱已註冊：請輸入該帳號原本的密碼，即可把這一隊加入同一個帳號'
             : translateAuthError(signIn.error.message),
         );
       }
       try {
-        await run(sb.rpc('join_team', { p_team_id: join.teamId, p_code: code }));
+        if (join.kind === 'vendor') await run(sb.rpc('join_vendor', { p_code: code }));
+        else await run(sb.rpc('join_team', { p_team_id: join.teamId, p_code: code }));
       } catch (e) {
-        // 已是該隊窗口視為成功；其他錯誤（名額已滿等）先登出，讓使用者留在註冊頁看到錯誤
-        if (!(e instanceof Error && e.message.includes('已是該隊窗口'))) {
+        // 已綁定視為成功；其他錯誤（名額已滿等）先登出，讓使用者留在註冊頁看到錯誤
+        if (!(e instanceof Error && /已是該隊窗口|已是委外廠商帳號/.test(e.message))) {
           await sb.auth.signOut();
           throw e;
         }
@@ -174,17 +204,20 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       await sb.auth.signOut();
     },
 
-    async lookupTeamInvite(inviteCode) {
-      const rows = (await run(sb.rpc('lookup_team_invite', { p_code: normalizeInviteCode(inviteCode) }))) as {
+    async lookupInvite(inviteCode): Promise<InviteInfo> {
+      const rows = (await run(sb.rpc('lookup_invite', { p_code: normalizeInviteCode(inviteCode) }))) as {
+        kind: 'team' | 'vendor';
         team_id: string;
         team_name: string;
         org_id: string;
         org_name: string;
+        vendor_name: string;
         is_full: boolean;
       }[];
       const r = rows?.[0];
       if (!r) throw new Error('邀請碼錯誤，請確認活動小組提供的邀請碼');
-      return { teamId: r.team_id, teamName: r.team_name, orgId: r.org_id, orgName: r.org_name, isFull: r.is_full };
+      if (r.kind === 'vendor') return { kind: 'vendor', vendorName: r.vendor_name, isFull: r.is_full };
+      return { kind: 'team', teamId: r.team_id, teamName: r.team_name, orgId: r.org_id, orgName: r.org_name, isFull: r.is_full };
     },
 
     async joinTeam(teamId, inviteCode) {
@@ -228,6 +261,7 @@ export function createSupabaseApi(url: string, key: string): DataApi {
     },
 
     async listTeams() {
+      if (vendorSession) return vendorTeams();
       const rows = await run(sb.from('teams').select(TEAM_SELECT).order('created_at'));
       return (rows as unknown as TeamRow[]).map(toTeam);
     },
@@ -288,12 +322,54 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       await run(sb.from('team_contacts').delete().eq('user_id', userId).eq('team_id', teamId));
     },
 
+    async listVendors() {
+      return run(sb.from('vendors').select('id, name, invite_code, account_limit').order('created_at')) as Promise<Vendor[]>;
+    },
+
+    async createVendor(input) {
+      // 邀請碼由資料庫預設值產生
+      await run(sb.from('vendors').insert({ name: input.name.trim(), account_limit: input.account_limit }));
+    },
+
+    async updateVendor(id, patch) {
+      const next = { ...patch };
+      if (next.name !== undefined) next.name = next.name.trim();
+      if (next.invite_code !== undefined) next.invite_code = normalizeInviteCode(next.invite_code);
+      await run(sb.from('vendors').update(next).eq('id', id));
+    },
+
+    async deleteVendor(id) {
+      await run(sb.from('vendors').delete().eq('id', id));
+    },
+
+    async listVendorContacts() {
+      const rows = await run(sb.from('vendor_contacts').select('user_id, vendor_id, created_at, profiles(email)').order('created_at'));
+      return (rows as unknown as (Omit<VendorContact, 'email'> & { profiles: { email: string | null } | null })[]).map(
+        ({ profiles, ...c }) => ({ ...c, email: profiles?.email ?? '' }),
+      );
+    },
+
+    async removeVendorContact(userId) {
+      await run(sb.from('vendor_contacts').delete().eq('user_id', userId));
+    },
+
     async listMembers(filter) {
       const rows = await fetchAll<MemberRow>((from, to) => {
         let q = sb.from('members').select(MEMBER_SELECT).order('created_at').order('id');
         if (filter?.teamId) q = q.eq('team_id', filter.teamId);
         return q.range(from, to) as unknown as PromiseLike<Result<MemberRow[] | null>>;
       });
+      if (vendorSession) {
+        // 委外廠商：個資一律由資料庫隱碼後回傳（證號、生日、手機）
+        const masked = await fetchAll<MemberPrivate & { member_id: string }>((from, to) =>
+          sb.rpc('vendor_member_private', { p_team_id: filter?.teamId ?? null }).range(from, to),
+        );
+        const privOf = new Map(masked.map(({ member_id, ...p }) => [member_id, p]));
+        return rows.map((r) => {
+          const p = privOf.get(r.id) ?? null;
+          return { ...toMember(r), diet: p?.diet ?? null, private: p };
+        });
+      }
       // 用餐習慣存在個資表，聯隊其他公司的隊員要另外以 member_diets() 取得（只回傳 diet）
       const diets = await fetchAll<{ member_id: string; diet: Member['diet'] }>((from, to) =>
         sb.rpc('member_diets', { p_team_id: filter?.teamId ?? null }).range(from, to),

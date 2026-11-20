@@ -839,6 +839,13 @@ textarea {
 .toolbar select {
   width: auto;
 }
+/* 後台「委外廠商」建立表單：欄位與按鈕底部對齊 */
+.vendor-form {
+  align-items: flex-end;
+}
+.vendor-form .vendor-limit {
+  width: 7rem;
+}
 .search {
   max-width: 260px;
   border-radius: 999px;

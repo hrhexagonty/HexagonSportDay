@@ -4,10 +4,20 @@ import { normalizeInviteCode } from '../lib/inviteCode';
 import { Field } from './ui';
 
 /** 展示模式提示：可用來體驗註冊的邀請碼 */
-export const DEMO_INVITE_HINT = '展示模式邀請碼：六角科技 獵豹隊 TECH03、六角建設 鋼鐵隊 BUIL04、醫材能源文創 聯隊 MEDI09 / ARTS09';
+export const DEMO_INVITE_HINT =
+  '展示模式邀請碼：六角科技 獵豹隊 TECH03、六角建設 鋼鐵隊 BUIL04、醫材能源文創 聯隊 MEDI09 / ARTS09、委外廠商 VENDOR01';
 
-/** 第一步：輸入邀請碼，正確才回傳對應的隊伍與公司（名額已滿則擋下） */
-export function InviteCodeForm({ onFound }: { onFound: (info: InviteInfo, code: string) => void }) {
+/**
+ * 第一步：輸入邀請碼，正確才回傳對應的隊伍與公司，或委外廠商（名額已滿則擋下）
+ * teamOnly：只接受隊伍邀請碼（已登入的窗口加入其他隊伍）
+ */
+export function InviteCodeForm({
+  onFound,
+  teamOnly = false,
+}: {
+  onFound: (info: InviteInfo, code: string) => void;
+  teamOnly?: boolean;
+}) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,9 +27,17 @@ export function InviteCodeForm({ onFound }: { onFound: (info: InviteInfo, code: 
     setBusy(true);
     setError(null);
     try {
-      const info = await api.lookupTeamInvite(code);
+      const info = await api.lookupInvite(code);
+      if (info.kind === 'vendor' && teamOnly) {
+        setError('這是委外廠商的邀請碼，請登出後於「首次註冊」以另一個信箱註冊');
+        return;
+      }
       if (info.isFull) {
-        setError(`「${info.teamName}」的窗口名額已滿，請洽活動小組`);
+        setError(
+          info.kind === 'vendor'
+            ? `「${info.vendorName}」的帳號名額已滿，請洽活動小組`
+            : `「${info.teamName}」的窗口名額已滿，請洽活動小組`,
+        );
         return;
       }
       onFound(info, normalizeInviteCode(code));
@@ -68,8 +86,19 @@ export function InviteCodeOk({ code, onReset }: { code: string; onReset: () => v
   );
 }
 
-/** 邀請碼對應的隊伍與公司 */
+/** 邀請碼對應的隊伍與公司，或委外廠商 */
 export function InviteTeamCard({ info }: { info: InviteInfo }) {
+  if (info.kind === 'vendor') {
+    return (
+      <div className="invite-team">
+        <span>VENDOR</span>
+        <b>{info.vendorName}</b>
+        <p className="muted small">
+          你將以「委外廠商」身分註冊：可檢視填報總覽、各隊隊員與項目報名、隊伍配置、健力報名（隊員證號、生日、手機為隱碼），並可編輯活動與項目設定。
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="invite-team">
       <span>TEAM</span>

@@ -3,7 +3,7 @@
 
 import { normalizeId } from './idNumber';
 import { cleanMemberInput, normalizeShirtSize, parseBirthday, parseDiet, parseGender, validateMemberInput } from './member';
-import { SHIRT_SIZES, type MemberInput } from './types';
+import { DIETS, DIET_LABEL, SHIRT_SIZES, type MemberInput } from './types';
 
 export const IMPORT_COLUMNS = ['姓名', '性別', '身分證字號', '生日', '用餐習慣', '特殊需求', '手機', '衣服尺寸'] as const;
 
@@ -37,7 +37,7 @@ export function parseMemberRows(text: string, now: Date = new Date()): ParsedRow
     const birthday = birthdayRaw ? parseBirthday(birthdayRaw) : null;
     if (birthdayRaw && !birthday) return fail(`生日「${birthdayRaw}」無法辨識，例如 1990/5/12 或民國 79/5/12`);
     const diet = dietRaw ? (parseDiet(dietRaw) ?? null) : null;
-    if (dietRaw && !diet) return fail(`用餐習慣「${dietRaw}」無法辨識，請填 葷食 / 蛋奶素 / 全素`);
+    if (dietRaw && !diet) return fail(`用餐習慣「${dietRaw}」無法辨識，請填 ${DIETS.map((d) => DIET_LABEL[d]).join(' / ')}`);
     const size = normalizeShirtSize(shirt);
     if (size === undefined) return fail(`衣服尺寸「${shirt}」無法辨識，可填 ${SHIRT_SIZES.join(' / ')}`);
 

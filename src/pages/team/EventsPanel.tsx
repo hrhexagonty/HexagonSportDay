@@ -212,7 +212,9 @@ export default function EventsPanel({ data }: { data: TeamPageData }) {
         <>
           <p className="entry-pool-hint muted small">
             {!editable
-              ? '報名已截止，僅供檢視。'
+              ? data.isVendor
+                ? '委外廠商僅供檢視。'
+                : '報名已截止，僅供檢視。'
               : drag?.fromEventId
                 ? '放開即取消這一項的報名'
                 : `拖曳人偶到項目框報名；也可先點選人偶再點項目框。每人最多 ${settings.max_events_per_member} 項。`}

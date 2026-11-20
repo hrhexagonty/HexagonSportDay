@@ -24,12 +24,12 @@ function parseNames(text: string): string[] {
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, 'zh-TW');
 
-/** 拖放目標：拖曳經過時標示，放開時回傳公司資訊 */
-function useDropZone(onDrop: (p: DragPayload) => void) {
+/** 拖放目標：拖曳經過時標示，放開時回傳公司資訊；disabled 時（唯讀）不接受拖放 */
+function useDropZone(onDrop: (p: DragPayload) => void, disabled = false) {
   const [over, setOver] = useState(false);
   return {
     over,
-    props: {
+    props: disabled ? {} : {
       onDragOver: (e: DragEvent) => {
         if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
         e.preventDefault();
@@ -116,32 +116,40 @@ function BulkAdd({
   );
 }
 
-/** 可拖曳的公司膠囊 */
+/** 可拖曳的公司膠囊（readOnly 時只顯示名稱） */
 function OrgChip({
   org,
   fromTeamId,
   free = false,
+  readOnly = false,
   onRemove,
 }: {
   org: Organization;
   fromTeamId: string | null;
   /** 尚未加入任何隊伍 */
   free?: boolean;
+  readOnly?: boolean;
   onRemove?: () => void;
 }) {
   return (
     <div
       className={`drag-chip${free ? ' drag-chip-free' : ''}`}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ orgId: org.id, fromTeamId } satisfies DragPayload));
-        e.dataTransfer.effectAllowed = fromTeamId ? 'move' : 'copy';
-      }}
-      title={`${org.name}（拖曳到隊伍底下）`}
+      draggable={!readOnly}
+      onDragStart={
+        readOnly
+          ? undefined
+          : (e) => {
+              e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ orgId: org.id, fromTeamId } satisfies DragPayload));
+              e.dataTransfer.effectAllowed = fromTeamId ? 'move' : 'copy';
+            }
+      }
+      title={readOnly ? org.name : `${org.name}（拖曳到隊伍底下）`}
     >
-      <span className="drag-chip-grip" aria-hidden>
-        ⠿
-      </span>
+      {!readOnly && (
+        <span className="drag-chip-grip" aria-hidden>
+          ⠿
+        </span>
+      )}
       <span className="drag-chip-name">{org.name}</span>
       {onRemove && (
         <button type="button" className="drag-chip-x" aria-label={`從此隊移除 ${org.name}`} onClick={onRemove}>
@@ -199,17 +207,19 @@ function OrgEditForm({ org, onDone }: { org: Organization; onDone: (saved: boole
 function OrgPool({
   orgs,
   teamCount,
+  readOnly,
   onDropOrg,
   onDelete,
   onChanged,
 }: {
   orgs: Organization[];
   teamCount: (o: Organization) => number;
+  readOnly: boolean;
   onDropOrg: (p: DragPayload) => void;
   onDelete: (o: Organization) => void;
   onChanged: () => void;
 }) {
-  const zone = useDropZone(onDropOrg);
+  const zone = useDropZone(onDropOrg, readOnly);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   return (
@@ -218,7 +228,9 @@ function OrgPool({
         <h3>公司清單</h3>
         <span className="muted small">{orgs.length} 家</span>
       </div>
-      <p className="muted small">拖曳到右側隊伍 = 加入；從隊伍拖回這裡 = 移除。一家公司可加入多隊。</p>
+      <p className="muted small">
+        {readOnly ? '各公司加入的隊伍數（僅供檢視）。' : '拖曳到右側隊伍 = 加入；從隊伍拖回這裡 = 移除。一家公司可加入多隊。'}
+      </p>
       <ul className="dnd-pool-list">
         {[...orgs].sort(byName).map((o) => {
           const n = teamCount(o);
@@ -237,8 +249,9 @@ function OrgPool({
           }
           return (
             <li key={o.id}>
-              <OrgChip org={o} fromTeamId={null} free={n === 0} />
+              <OrgChip org={o} fromTeamId={null} free={n === 0} readOnly={readOnly} />
               <span className={`dnd-pool-meta${n === 0 ? ' warn-text' : ''}`}>{n === 0 ? '未加入' : `${n} 隊`}</span>
+              {!readOnly && (
               <span className="dnd-pool-actions">
                 <button className="btn btn-xs btn-ghost" onClick={() => setEditingId(o.id)}>
                   編輯
@@ -247,6 +260,7 @@ function OrgPool({
                   刪除
                 </button>
               </span>
+              )}
             </li>
           );
         })}
@@ -261,6 +275,7 @@ function TeamCard({
   team,
   orgs,
   orgIds,
+  readOnly,
   onDropOrg,
   onRemoveOrg,
   onRename,
@@ -270,12 +285,13 @@ function TeamCard({
   orgs: Organization[];
   /** 目前畫面上的參與公司（含尚未存檔完成的拖放） */
   orgIds: string[];
+  readOnly: boolean;
   onDropOrg: (p: DragPayload) => void;
   onRemoveOrg: (orgId: string) => void;
   onRename: () => void;
   onDelete: () => void;
 }) {
-  const zone = useDropZone(onDropOrg);
+  const zone = useDropZone(onDropOrg, readOnly);
   const mine = orgIds.map((id) => orgs.find((o) => o.id === id)).filter((o): o is Organization => !!o);
   const others = orgs.filter((o) => !orgIds.includes(o.id)).sort(byName);
 
@@ -291,26 +307,36 @@ function TeamCard({
             {orgIds.length === 0 ? '尚未加入公司' : `${orgIds.length} 家公司`} {orgIds.length > 1 && <Badge tone="accent">聯隊</Badge>}
           </span>
         </div>
-        <div className="actions">
-          <button className="btn btn-xs btn-ghost" onClick={onRename}>
-            改名
-          </button>
-          <button className="btn btn-xs btn-danger-ghost" onClick={onDelete}>
-            刪除
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="actions">
+            <button className="btn btn-xs btn-ghost" onClick={onRename}>
+              改名
+            </button>
+            <button className="btn btn-xs btn-danger-ghost" onClick={onDelete}>
+              刪除
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="drop-card-body">
         {mine.length === 0 ? (
-          <span className="drop-card-empty">把公司拖曳到這裡</span>
+          <span className="drop-card-empty">{readOnly ? '尚未加入公司' : '把公司拖曳到這裡'}</span>
         ) : (
-          mine.map((o) => <OrgChip key={o.id} org={o} fromTeamId={team.id} onRemove={() => onRemoveOrg(o.id)} />)
+          mine.map((o) => (
+            <OrgChip
+              key={o.id}
+              org={o}
+              fromTeamId={team.id}
+              readOnly={readOnly}
+              onRemove={readOnly ? undefined : () => onRemoveOrg(o.id)}
+            />
+          ))
         )}
       </div>
 
       {/* 觸控裝置無法拖曳時的替代操作 */}
-      {others.length > 0 && (
+      {!readOnly && others.length > 0 && (
         <select
           className="select-sm"
           value=""
@@ -329,8 +355,9 @@ function TeamCard({
   );
 }
 
+/** 委外廠商（data.readOnly）只能檢視：不顯示建立公司 / 隊伍，也不能拖曳、改名、刪除 */
 export default function TeamSetup({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
-  const { orgs, teams, members, contacts, settings } = data;
+  const { orgs, teams, members, contacts, settings, readOnly } = data;
   const toast = useToast();
   const [onlyFree, setOnlyFree] = useState(false);
   const [search, setSearch] = useState('');
@@ -455,6 +482,7 @@ export default function TeamSetup({ data, onChanged }: { data: AdminData; onChan
         </span>
       </div>
 
+      {!readOnly && (
       <div className="grid setup-inputs">
         <BulkAdd
           no="01"
@@ -477,8 +505,15 @@ export default function TeamSetup({ data, onChanged }: { data: AdminData; onChan
           onDone={onChanged}
         />
       </div>
+      )}
 
       <section className="stack">
+        {readOnly ? (
+          <div>
+            <h3>隊伍與參與公司</h3>
+            <p className="muted small">各隊伍由哪些公司組成（一隊有多家公司即為聯隊）。僅供檢視，配置由活動小組調整。</p>
+          </div>
+        ) : (
         <div>
           <Eyebrow>Step 03</Eyebrow>
           <h3>拖曳公司到隊伍底下</h3>
@@ -487,13 +522,15 @@ export default function TeamSetup({ data, onChanged }: { data: AdminData; onChan
             觸控裝置請使用各隊下方的「＋ 加入公司」選單。各隊邀請碼請至「窗口與邀請碼」查看並發給各隊代表。
           </p>
         </div>
+        )}
         {teams.length === 0 ? (
-          <div className="notice notice-info">請先在 Step 02 建立隊伍。</div>
+          <div className="notice notice-info">{readOnly ? '尚未建立隊伍。' : '請先在 Step 02 建立隊伍。'}</div>
         ) : (
           <div className="dnd-board">
             <OrgPool
               orgs={orgs}
               teamCount={(o) => teams.filter((t) => orgsOf(t).includes(o.id)).length}
+              readOnly={readOnly}
               onDropOrg={dropOnPool}
               onDelete={deleteOrg}
               onChanged={onChanged}
@@ -513,6 +550,7 @@ export default function TeamSetup({ data, onChanged }: { data: AdminData; onChan
                     team={t}
                     orgs={orgs}
                     orgIds={orgsOf(t)}
+                    readOnly={readOnly}
                     onDropOrg={(p) => void dropOnTeam(p, t)}
                     onRemoveOrg={(orgId) => void removeOrg(t, orgId)}
                     onRename={() => renameTeam(t)}

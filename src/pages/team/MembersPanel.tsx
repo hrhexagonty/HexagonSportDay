@@ -373,7 +373,7 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
         )}
       </div>
 
-      {merged && !data.isAdmin && (
+      {merged && !data.isAdmin && !data.isVendor && (
         <div className="notice notice-info">
           這是聯隊：你只能新增、編輯「{orgNames.get(data.myOrgId ?? '')}」的隊員，其他公司隊員只顯示姓名、性別與用餐習慣；身分證 / 居留證字號、生日、特殊需求、手機、衣服尺寸只有該公司窗口看得到。
         </div>
@@ -453,7 +453,7 @@ export default function MembersPanel({ data }: { data: TeamPageData }) {
                       </>
                     ) : (
                       <td colSpan={privateCols} className="muted small private-hidden">
-                        {data.isAdmin || m.org_id === data.myOrgId ? '個資已清除' : '個資僅限所屬公司檢視'}
+                        {data.isAdmin || data.isVendor || m.org_id === data.myOrgId ? '個資已清除' : '個資僅限所屬公司檢視'}
                       </td>
                     )}
                     <td>

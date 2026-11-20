@@ -64,7 +64,12 @@ describe('parseMemberRows', () => {
       '性別（女）與身分證字號不符',
       '身分證字號與第 1 行重複',
       '生日「1990/2/30」無法辨識，例如 1990/5/12 或民國 79/5/12',
-      '用餐習慣「吃肉」無法辨識，請填 葷食 / 蛋奶素 / 全素',
+      '用餐習慣「吃肉」無法辨識，請填 葷食 / 葷食不吃豬 / 蛋奶素 / 全素',
     ]);
+  });
+
+  it('用餐習慣可填「葷食不吃豬」或「不吃豬」', () => {
+    const rows = parseMemberRows(['王小明\t男\t\t\t葷食不吃豬', '李小華\t女\t\t\t不吃豬', '陳一\t女\t\t\tmeat_no_pork'].join('\n'), NOW);
+    expect(rows.map((r) => r.value?.diet)).toEqual(['meat_no_pork', 'meat_no_pork', 'meat_no_pork']);
   });
 });

@@ -60,7 +60,7 @@ function SignInForm({ onDone }: { onDone: (email: string, password: string) => P
   );
 }
 
-/** 首次註冊：先輸入邀請碼，正確後才顯示對應隊伍與信箱密碼設定 */
+/** 首次註冊：先輸入邀請碼，正確後才顯示對應隊伍（或委外廠商）與信箱密碼設定 */
 function SignUpForm() {
   const { refresh } = useAuth();
   const navigate = useNavigate();
@@ -82,15 +82,23 @@ function SignUpForm() {
     setBusy(true);
     setNotice(null);
     const { info, code } = invite;
+    // 完成後的提示文字：隊伍窗口 / 委外廠商
+    const who = info.kind === 'vendor' ? `委外廠商「${info.vendorName}」` : `「${info.teamName}」（${info.orgName}）`;
     try {
-      const r = await api.registerForTeam(email, password, { teamId: info.teamId, inviteCode: code });
+      const r = await api.registerWithInvite(
+        email,
+        password,
+        info.kind === 'vendor' ? { kind: 'vendor', inviteCode: code } : { kind: 'team', teamId: info.teamId, inviteCode: code },
+      );
       if (r.needsEmailConfirm) {
-        setNotice(`已完成註冊並綁定「${info.teamName}」（${info.orgName}）。請至信箱點擊驗證連結，完成後回到此頁登入。`);
+        setNotice(`已完成註冊並綁定${who}。請至信箱點擊驗證連結，完成後回到此頁登入。`);
       } else {
         toast.ok(
-          r.existingAccount
-            ? `已把「${info.teamName}」加入你的帳號，可在「我的隊伍」同時管理`
-            : `註冊完成，已成為「${info.teamName}」（${info.orgName}）的窗口`,
+          info.kind === 'vendor'
+            ? `註冊完成，已綁定${who}`
+            : r.existingAccount
+              ? `已把「${info.teamName}」加入你的帳號，可在「我的隊伍」同時管理`
+              : `註冊完成，已成為${who}的窗口`,
         );
         navigate(homePathFor(await refresh()));
       }
@@ -119,7 +127,7 @@ function SignUpForm() {
 
       {invite && (
         <>
-          <Step no="02" title="確認隊伍">
+          <Step no="02" title={invite.info.kind === 'vendor' ? '確認身分' : '確認隊伍'}>
             <InviteTeamCard info={invite.info} />
           </Step>
           <form onSubmit={submit} className="stack-lg">
@@ -157,7 +165,9 @@ function SignUpForm() {
                 </Field>
               </div>
               <p className="muted small">
-                同一位窗口代表多隊時，可使用同一個信箱：若此信箱已註冊，請輸入原本的密碼，這一隊會加入同一個帳號，登入後在「我的隊伍」同時管理。
+                {invite.info.kind === 'vendor'
+                  ? '委外廠商帳號不能同時擔任隊伍窗口，請使用與隊伍窗口不同的信箱。'
+                  : '同一位窗口代表多隊時，可使用同一個信箱：若此信箱已註冊，請輸入原本的密碼，這一隊會加入同一個帳號，登入後在「我的隊伍」同時管理。'}
               </p>
             </Step>
             {notice && <div className="notice notice-ok">{notice}</div>}

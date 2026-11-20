@@ -7,9 +7,9 @@ import { companyEvents, evaluateSquad, teamSizeLabel } from '../../lib/rules';
 import { GENDER_LABEL, type Member, type OrgSquad } from '../../lib/types';
 import type { AdminData } from './types';
 
-/** 後台「健力報名」：各公司組成的隊伍、狀態與成員；可退回草稿、刪除、匯出 */
+/** 後台「健力報名」：各公司組成的隊伍、狀態與成員；可退回草稿、刪除、匯出（委外廠商只能檢視與匯出） */
 export default function Squads({ data, onChanged }: { data: AdminData; onChanged: () => void }) {
-  const { orgs, teams, members, events, squads, settings } = data;
+  const { orgs, teams, members, events, squads, settings, readOnly } = data;
   const toast = useToast();
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
   const teamName = new Map(teams.map((t) => [t.id, t.name]));
@@ -104,7 +104,7 @@ export default function Squads({ data, onChanged }: { data: AdminData; onChanged
                       <th>狀態</th>
                       <th>人數</th>
                       <th>成員</th>
-                      <th />
+                      {!readOnly && <th />}
                     </tr>
                   </thead>
                   <tbody>
@@ -137,6 +137,7 @@ export default function Squads({ data, onChanged }: { data: AdminData; onChanged
                               ))}
                             </div>
                           </td>
+                          {!readOnly && (
                           <td className="nowrap">
                             {s.submitted_at && (
                               <button
@@ -157,6 +158,7 @@ export default function Squads({ data, onChanged }: { data: AdminData; onChanged
                               刪除
                             </button>
                           </td>
+                          )}
                         </tr>
                       );
                     })}

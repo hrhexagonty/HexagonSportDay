@@ -16,6 +16,9 @@ import type {
   TeamInput,
   TeamInvite,
   TeamPatch,
+  Vendor,
+  VendorContact,
+  VendorInput,
 } from '../types';
 
 /** 帳號綁定的隊伍；orgId = 以哪家公司的邀請碼加入 */
@@ -30,25 +33,32 @@ export interface SessionInfo {
   userId: string;
   email: string;
   role: Role;
-  /** 綁定的隊伍（管理員為空陣列） */
+  /** 綁定的隊伍（管理員、委外廠商為空陣列） */
   teams: SessionTeam[];
+  /** 委外廠商名稱（role = 'vendor' 時才有） */
+  vendorName: string | null;
 }
 
-/** 註冊時一併綁定的隊伍 */
-export interface JoinInput {
-  teamId: string;
-  inviteCode: string;
-}
+/** 以邀請碼綁定的身分：隊伍窗口（隊伍 × 公司）或委外廠商 */
+export type JoinInput = { kind: 'team'; teamId: string; inviteCode: string } | { kind: 'vendor'; inviteCode: string };
 
-/** 以邀請碼查出的隊伍與公司（邀請碼本身就對應「隊伍 × 公司」） */
-export interface InviteInfo {
-  teamId: string;
-  teamName: string;
-  orgId: string;
-  orgName: string;
-  /** 窗口名額已滿 */
-  isFull: boolean;
-}
+/** 以邀請碼查出的身分：隊伍邀請碼對應「隊伍 × 公司」；廠商邀請碼對應一家委外廠商 */
+export type InviteInfo =
+  | {
+      kind: 'team';
+      teamId: string;
+      teamName: string;
+      orgId: string;
+      orgName: string;
+      /** 窗口名額已滿 */
+      isFull: boolean;
+    }
+  | {
+      kind: 'vendor';
+      vendorName: string;
+      /** 廠商帳號名額已滿 */
+      isFull: boolean;
+    };
 
 /**
  * 資料存取介面。頁面只透過這個介面讀寫資料，實作有兩種：
@@ -61,6 +71,8 @@ export interface InviteInfo {
  * - 隊員個資 Member.private：只有「該隊 × 該公司」的窗口與管理員看得到，其餘為 null
  * - 公司完整資料、邀請碼、窗口名單：只有管理員
  * - 公司同仁名單（跨分隊，只有姓名、性別）與公司組隊：該公司（任一隊）的窗口與管理員
+ * - 委外廠商：唯讀全部隊伍、隊員、報名與公司組隊；個資（證號、生日、手機）與隊長電話為隱碼；
+ *   可修改活動設定與比賽項目；看不到公司完整資料、邀請碼、窗口名單
  */
 export interface DataApi {
   readonly mode: 'supabase' | 'demo';
@@ -70,18 +82,18 @@ export interface DataApi {
   onAuthChange(cb: () => void): () => void;
   signIn(email: string, password: string): Promise<void>;
   /**
-   * 首次註冊：新信箱建立帳號並綁定隊伍（綁定失敗則不會建立帳號）；
+   * 首次註冊：新信箱建立帳號並綁定隊伍或委外廠商（綁定失敗則不會建立帳號）；
    * 已註冊的信箱（同一位窗口代表多隊）需輸入原本的密碼，登入後把這一隊加入同一個帳號。
    */
-  registerForTeam(
+  registerWithInvite(
     email: string,
     password: string,
     join: JoinInput,
   ): Promise<{ needsEmailConfirm: boolean; existingAccount: boolean }>;
   signOut(): Promise<void>;
-  /** 以邀請碼查出隊伍與公司（未登入可呼叫；前台不公開隊伍清單） */
-  lookupTeamInvite(inviteCode: string): Promise<InviteInfo>;
-  /** 已登入帳號以邀請碼加入（其他）隊伍，回傳隊名 */
+  /** 以邀請碼查出隊伍與公司，或委外廠商（未登入可呼叫；前台不公開隊伍清單） */
+  lookupInvite(inviteCode: string): Promise<InviteInfo>;
+  /** 已登入帳號以邀請碼加入（其他）隊伍，回傳隊名（委外廠商帳號不可） */
   joinTeam(teamId: string, inviteCode: string): Promise<string>;
 
   // ---- 活動設定與項目 ----
@@ -117,6 +129,17 @@ export interface DataApi {
   listTeamContacts(): Promise<TeamContact[]>;
   /** 解除窗口與隊伍的綁定（釋出名額） */
   removeTeamContact(userId: string, teamId: string): Promise<void>;
+
+  // ---- 委外廠商（管理員） ----
+  listVendors(): Promise<Vendor[]>;
+  /** 建立廠商並產生邀請碼 */
+  createVendor(input: VendorInput): Promise<void>;
+  updateVendor(id: string, patch: Partial<VendorInput & Pick<Vendor, 'invite_code'>>): Promise<void>;
+  /** 刪除廠商：其帳號綁定一併移除（帳號失去廠商權限） */
+  deleteVendor(id: string): Promise<void>;
+  listVendorContacts(): Promise<VendorContact[]>;
+  /** 解除廠商帳號（釋出名額） */
+  removeVendorContact(userId: string): Promise<void>;
 
   // ---- 隊員 ----
   listMembers(filter?: { teamId?: string }): Promise<Member[]>;

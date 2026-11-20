@@ -5,6 +5,8 @@ interface AuthState {
   session: SessionInfo | null;
   loading: boolean;
   isAdmin: boolean;
+  /** 委外廠商：管理後台部分分頁唯讀、個資隱碼 */
+  isVendor: boolean;
   /** 重新讀取登入狀態並回傳最新 session（登入 / 加入隊伍後呼叫） */
   refresh: () => Promise<SessionInfo | null>;
   signOut: () => Promise<void>;
@@ -39,7 +41,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const value = useMemo(
-    () => ({ session, loading, isAdmin: session?.role === 'super_admin', refresh, signOut }),
+    () => ({
+      session,
+      loading,
+      isAdmin: session?.role === 'super_admin',
+      isVendor: session?.role === 'vendor',
+      refresh,
+      signOut,
+    }),
     [session, loading, refresh, signOut],
   );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
@@ -51,10 +60,10 @@ export function useAuth(): AuthState {
   return v;
 }
 
-/** 登入後應前往的頁面：只綁定一隊的窗口直接進隊伍頁 */
+/** 登入後應前往的頁面：管理員與委外廠商進後台；只綁定一隊的窗口直接進隊伍頁 */
 export function homePathFor(session: SessionInfo | null): string {
   if (!session) return '/login';
-  if (session.role === 'super_admin') return '/admin';
+  if (session.role === 'super_admin' || session.role === 'vendor') return '/admin';
   if (session.teams.length === 0) return '/join';
   return session.teams.length === 1 ? `/teams/${session.teams[0].teamId}` : '/org';
 }

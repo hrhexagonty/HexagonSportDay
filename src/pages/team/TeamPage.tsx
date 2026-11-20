@@ -114,7 +114,7 @@ function TeamInfo({ data }: { data: TeamPageData }) {
 
 export default function TeamPage() {
   const { teamId = '' } = useParams();
-  const { isAdmin, session } = useAuth();
+  const { isAdmin, isVendor, session } = useAuth();
   const [tab, setTab] = useState<'members' | 'events'>('members');
 
   const q = useAsync(async () => {
@@ -146,19 +146,25 @@ export default function TeamPage() {
     merged: isMergedTeam(team),
     myOrgId,
     defaultOrgId: myOrgId && team.org_ids.includes(myOrgId) ? myOrgId : team.org_ids[0],
-    editable: isAdmin || registrationOpen(settings),
+    editable: isAdmin || (!isVendor && registrationOpen(settings)),
     isAdmin,
+    isVendor,
     reload: q.reload,
   };
+  const staff = isAdmin || isVendor;
 
   return (
     <div className="page">
-      <Link className="back-link" to={isAdmin ? '/admin' : '/org'}>
-        ← 回{isAdmin ? '管理後台' : '我的隊伍'}
+      <Link className="back-link" to={staff ? '/admin' : '/org'}>
+        ← 回{staff ? '管理後台' : '我的隊伍'}
       </Link>
       <TeamInfo data={data} />
 
-      {!data.editable && <div className="notice notice-err">報名已截止，資料僅供檢視。</div>}
+      {isVendor ? (
+        <div className="notice notice-info">委外廠商檢視：資料僅供檢視，隊員的證號、生日、手機與隊長電話已隱碼。</div>
+      ) : (
+        !data.editable && <div className="notice notice-err">報名已截止，資料僅供檢視。</div>
+      )}
 
       <Tabs
         value={tab}

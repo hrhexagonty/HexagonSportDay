@@ -76,7 +76,7 @@ function Footer({ full }: { full: boolean }) {
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { session, isAdmin, signOut } = useAuth();
+  const { session, isAdmin, isVendor, signOut } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const isHome = pathname === '/';
@@ -95,7 +95,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   const status = session
     ? isAdmin
       ? 'Admin'
-      : myOrgs.length > 0
+      : isVendor
+        ? `委外廠商 · ${session.vendorName ?? ''}`
+        : myOrgs.length > 0
         ? myOrgs.join('、')
         : '未綁定隊伍'
     : api.mode === 'demo'
@@ -129,7 +131,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 </NavLink>
               </>
             )}
-            {isAdmin && (
+            {(isAdmin || isVendor) && (
               <NavLink to="/admin" className={activeIf(onTeamPage)}>
                 管理後台
               </NavLink>

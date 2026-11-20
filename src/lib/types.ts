@@ -1,15 +1,17 @@
 // 系統共用型別：欄位與 supabase/migrations 中的資料表一一對應，修改 schema 時需同步
 
 export type Gender = 'M' | 'F';
-export type Role = 'org_admin' | 'super_admin';
+/** 登入身分：隊伍窗口 / 管理員 / 委外廠商（委外廠商由 vendor_contacts 判定，profiles.role 仍為 org_admin） */
+export type Role = 'org_admin' | 'super_admin' | 'vendor';
 export type EventCategory = 'fun' | 'powerlifting';
-export type Diet = 'meat' | 'ovo_lacto' | 'vegan';
+export type Diet = 'meat' | 'meat_no_pork' | 'ovo_lacto' | 'vegan';
 
 export const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] as const;
 export type ShirtSize = (typeof SHIRT_SIZES)[number];
 
-export const DIETS: Diet[] = ['meat', 'ovo_lacto', 'vegan'];
-export const DIET_LABEL: Record<Diet, string> = { meat: '葷食', ovo_lacto: '蛋奶素', vegan: '全素' };
+// 與 member_private.diet 的 check constraint 一致，修改時需同步 migration
+export const DIETS: Diet[] = ['meat', 'meat_no_pork', 'ovo_lacto', 'vegan'];
+export const DIET_LABEL: Record<Diet, string> = { meat: '葷食', meat_no_pork: '葷食不吃豬', ovo_lacto: '蛋奶素', vegan: '全素' };
 export const GENDER_LABEL: Record<Gender, string> = { M: '男', F: '女' };
 export const CATEGORY_LABEL: Record<EventCategory, string> = { fun: '趣味競賽', powerlifting: '健力比賽' };
 
@@ -67,13 +69,31 @@ export interface TeamContact {
   created_at: string;
 }
 
+/** 委外廠商與其邀請碼（vendors 表，僅管理員可讀） */
+export interface Vendor {
+  id: string;
+  name: string;
+  invite_code: string;
+  /** 可用此邀請碼註冊的帳號數 */
+  account_limit: number;
+}
+
+/** 已註冊的委外廠商帳號（管理員檢視用） */
+export interface VendorContact {
+  user_id: string;
+  vendor_id: string;
+  email: string;
+  created_at: string;
+}
+
 /**
  * 隊員個資（member_private 表）：只有隊員所屬公司窗口與管理員看得到
  * 新增隊員只需姓名與性別，以下欄位皆可先不填（null）之後再補
+ * 委外廠商拿到的是隱碼後的值（證號 A12****789、生日 1990-**-**、手機 0912***678），見 src/lib/mask.ts
  */
 export interface MemberPrivate {
   national_id: string | null; // 身分證 / 居留證
-  birthday: string | null; // YYYY-MM-DD
+  birthday: string | null; // YYYY-MM-DD（委外廠商為 YYYY-**-**）
   phone: string | null;
   shirt_size: ShirtSize | null;
   diet: Diet | null;
@@ -139,6 +159,7 @@ export type TeamInput = Pick<Team, 'name' | 'captain_name' | 'captain_phone'>;
 /** 隊伍可修改欄位；name、contact_limit 只有管理員能改 */
 export type TeamPatch = Partial<TeamInput & Pick<Team, 'contact_limit'>>;
 export type MemberInput = Pick<Member, 'name' | 'gender'> & MemberPrivate;
+export type VendorInput = Pick<Vendor, 'name' | 'account_limit'>;
 export type EventInput = Pick<
   SportEvent,
   'name' | 'description' | 'min_per_team' | 'max_per_team' | 'min_female' | 'rules' | 'video_url'

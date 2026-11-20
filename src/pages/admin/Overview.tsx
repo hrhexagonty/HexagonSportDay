@@ -53,7 +53,7 @@ export default function Overview({ data }: { data: AdminData }) {
         <StatCard
           label="參與公司"
           value={`${orgs.length} 家`}
-          hint={`聯隊 ${mergedCount} 隊 · 窗口 ${data.contacts.length} 人`}
+          hint={`聯隊 ${mergedCount} 隊${data.readOnly ? '' : ` · 窗口 ${data.contacts.length} 人`}`}
         />
         <StatCard
           label="已建立隊伍"
@@ -77,7 +77,7 @@ export default function Overview({ data }: { data: AdminData }) {
         <div className="notice notice-warn">
           {teams.length !== target && `已建立 ${teams.length} 隊，與目標 ${target} 隊不一致。`}
           {unassigned > 0 && `有 ${unassigned} 隊尚未分配公司，窗口無法註冊。`}
-          請至「隊伍配置」調整。
+          {data.readOnly ? '請洽活動小組調整。' : '請至「隊伍配置」調整。'}
         </div>
       )}
 

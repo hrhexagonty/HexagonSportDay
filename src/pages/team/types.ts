@@ -17,8 +17,10 @@ export interface TeamPageData {
   myOrgId: string | null;
   /** 新增隊員時預設的所屬公司 */
   defaultOrgId: string;
-  /** 報名開放中或管理員 */
+  /** 報名開放中或管理員（委外廠商一律 false） */
   editable: boolean;
   isAdmin: boolean;
+  /** 委外廠商：唯讀，個資為隱碼 */
+  isVendor: boolean;
   reload: () => void;
 }

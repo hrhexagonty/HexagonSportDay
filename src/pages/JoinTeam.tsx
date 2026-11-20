@@ -8,24 +8,25 @@ import { api, type InviteInfo } from '../lib/api';
 
 /** 已登入的窗口以邀請碼加入（其他）隊伍；尚未綁定任何隊伍的帳號也會被導到這裡 */
 export default function JoinTeam() {
-  const { session, isAdmin, refresh } = useAuth();
+  const { session, isAdmin, isVendor, refresh } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const [invite, setInvite] = useState<{ info: InviteInfo; code: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (isAdmin) return <Navigate to="/admin" replace />;
+  if (isAdmin || isVendor) return <Navigate to="/admin" replace />;
   const joined = session?.teams ?? [];
-  const already = !!invite && joined.some((t) => t.teamId === invite.info.teamId);
+  const info = invite?.info.kind === 'team' ? invite.info : null;
+  const already = !!info && joined.some((t) => t.teamId === info.teamId);
 
   async function join() {
-    if (!invite) return;
+    if (!invite || !info) return;
     setBusy(true);
     try {
-      const name = await api.joinTeam(invite.info.teamId, invite.code);
+      const name = await api.joinTeam(info.teamId, invite.code);
       toast.ok(`已加入「${name}」`);
       await refresh();
-      navigate(`/teams/${invite.info.teamId}`);
+      navigate(`/teams/${info.teamId}`);
     } catch (err) {
       toast.error(err);
     } finally {
@@ -67,7 +68,7 @@ export default function JoinTeam() {
             <InviteTeamCard info={invite.info} />
             {already ? (
               <div className="notice notice-info">
-                你已是這一隊的窗口。<Link to={`/teams/${invite.info.teamId}`}>前往隊伍頁 →</Link>
+                你已是這一隊的窗口。<Link to={`/teams/${info?.teamId}`}>前往隊伍頁 →</Link>
               </div>
             ) : (
               <button className="btn btn-primary btn-block" disabled={busy} onClick={join}>
@@ -76,7 +77,7 @@ export default function JoinTeam() {
             )}
           </div>
         ) : (
-          <InviteCodeForm onFound={(info, code) => setInvite({ info, code })} />
+          <InviteCodeForm teamOnly onFound={(found, code) => setInvite({ info: found, code })} />
         )}
       </div>
     </div>

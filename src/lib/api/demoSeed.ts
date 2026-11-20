@@ -14,13 +14,22 @@ import {
   type SportEvent,
   type Team,
   type TeamInvite,
+  type Vendor,
 } from '../types';
 
 export interface DemoUser {
   id: string;
   email: string;
   password: string;
-  role: Role;
+  /** 對應 profiles.role；委外廠商由 vendorContacts 判定 */
+  role: Exclude<Role, 'vendor'>;
+}
+
+/** 委外廠商帳號綁定（對應 vendor_contacts 表） */
+export interface DemoVendorContact {
+  user_id: string;
+  vendor_id: string;
+  created_at: string;
 }
 
 /** 窗口與隊伍的綁定（對應 team_contacts 表） */
@@ -32,7 +41,7 @@ export interface DemoContact {
 }
 
 export interface DemoDb {
-  version: 7;
+  version: 8;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
@@ -44,6 +53,9 @@ export interface DemoDb {
   entries: EventEntry[];
   /** 公司組隊（健力），對應 org_squads + org_squad_members */
   squads: OrgSquad[];
+  /** 委外廠商與其帳號 */
+  vendors: Vendor[];
+  vendorContacts: DemoVendorContact[];
   users: DemoUser[];
   sessionUserId: string | null;
 }
@@ -71,6 +83,7 @@ export const DEMO_ACCOUNTS = {
   org: { email: 'org@demo.local', password: 'demo', label: '隊伍窗口（六角科技，管理 2 隊）' },
   merged: { email: 'energy@demo.local', password: 'demo', label: '隊伍窗口（六角能源，參與聯隊）' },
   admin: { email: 'admin@demo.local', password: 'demo', label: '活動管理員' },
+  vendor: { email: 'vendor@demo.local', password: 'demo', label: '委外廠商（活動執行公司）' },
 } as const;
 
 // [公司名稱, 邀請碼前綴, 聯絡人]；邀請碼 = 前綴 + 隊伍編號，例如 TECH01
@@ -135,7 +148,7 @@ export function createSeed(): DemoDb {
 
   function fakeDiet(): Diet {
     const r = rng();
-    return r < 0.85 ? 'meat' : r < 0.95 ? 'ovo_lacto' : 'vegan';
+    return r < 0.78 ? 'meat' : r < 0.86 ? 'meat_no_pork' : r < 0.95 ? 'ovo_lacto' : 'vegan';
   }
 
   const organizations: Organization[] = ORGS.map(([name, , contact], i) => ({
@@ -238,7 +251,7 @@ export function createSeed(): DemoDb {
   ];
 
   return {
-    version: 7,
+    version: 8,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',
@@ -262,10 +275,13 @@ export function createSeed(): DemoDb {
     events: DEMO_EVENTS.map((e) => ({ ...e, rules: DEMO_RULES[e.id] ?? '' })),
     entries,
     squads,
+    vendors: [{ id: 'vendor-1', name: '（範例）活動執行公司', invite_code: 'VENDOR01', account_limit: 3 }],
+    vendorContacts: [{ user_id: 'u-vendor', vendor_id: 'vendor-1', created_at: '2026-11-19T01:00:00.000Z' }],
     users: [
       { id: 'u-admin', email: DEMO_ACCOUNTS.admin.email, password: 'demo', role: 'super_admin' },
       { id: 'u-org', email: DEMO_ACCOUNTS.org.email, password: 'demo', role: 'org_admin' },
       { id: 'u-energy', email: DEMO_ACCOUNTS.merged.email, password: 'demo', role: 'org_admin' },
+      { id: 'u-vendor', email: DEMO_ACCOUNTS.vendor.email, password: 'demo', role: 'org_admin' },
     ],
     sessionUserId: null,
   };

@@ -106,7 +106,7 @@ function buildReports(data: AdminData) {
     { key: 'roster', title: '隊員總名單', desc: '所有隊員完整資料（含身分證字號、生日、用餐與特殊需求）與報名項目。', count: `${members.length} 人`, build: roster, sensitive: true },
     { key: 'insurance', title: '保險名冊', desc: '姓名、身分證字號、生日，供投保活動保險使用；尚未補齊的隊員欄位留空。', count: `${insured} / ${members.length} 人已填`, build: insurance, sensitive: true },
     { key: 'signups', title: '項目報名名單', desc: '依項目列出各隊選手，可直接用於檢錄。', count: `${entries.length} 筆`, build: signups, sensitive: false },
-    { key: 'meals', title: '用餐統計', desc: '各隊葷食 / 蛋奶素 / 全素份數，供訂餐使用。', count: `${teams.length} 隊`, build: meals, sensitive: false },
+    { key: 'meals', title: '用餐統計', desc: `各隊${DIETS.map((d) => DIET_LABEL[d]).join(' / ')}份數，供訂餐使用。`, count: `${teams.length} 隊`, build: meals, sensitive: false },
     { key: 'needs', title: '特殊需求名單', desc: '有填寫特殊需求（過敏、無障礙等）的隊員，供場地與餐點安排。', count: `${needs.length} 人`, build: specialNeeds, sensitive: true },
     { key: 'shirts', title: '衣服尺寸統計', desc: '各隊伍衣服尺寸數量，供製作隊服。', count: `${teams.length} 隊`, build: shirts, sensitive: false },
   ];
