@@ -105,6 +105,10 @@ beforeAll(async () => {
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated;
     grant execute on function auth.uid() to anon, authenticated;
+    -- 同 Supabase：public schema 新建的資料表 / 函式預設授權 anon、authenticated（實際權限靠 RLS 與 revoke）
+    alter default privileges in schema public grant all on tables to anon, authenticated;
+    alter default privileges in schema public grant all on functions to anon, authenticated;
+    alter default privileges in schema public grant all on sequences to anon, authenticated;
   `);
   const files = readdirSync(MIGRATIONS)
     .filter((x) => x.endsWith('.sql'))
@@ -265,7 +269,7 @@ describe('隊員與個資', () => {
   });
 
   it('證號全活動唯一、檢查碼與性別錯誤被擋，失敗整批回滾', async () => {
-    await expect(addMembers(U.a, team.a, org['甲'], [row('甲一', 'M', 'A123456789')])).rejects.toThrow('已報名');
+    await expect(addMembers(U.a, team.a, org['甲'], [row('甲一', 'M', 'A123456789')])).rejects.toThrow('無法使用');
     await expect(addMembers(U.a, team.a, org['甲'], [row('甲一', 'M', 'A123456788')])).rejects.toThrow('national_id');
     await expect(addMembers(U.a, team.a, org['甲'], [row('甲一', 'F', 'F123456786')])).rejects.toThrow('不符');
     const n = await db.query<{ n: number }>('select count(*)::int n from members where team_id = $1', [team.a]);
@@ -342,7 +346,7 @@ describe('隊員與個資', () => {
     // 之後補資料：證號仍檢查性別一致、全活動唯一，生日不可在未來
     const id = await memberId('甲二二');
     const patch = (data: object) => as(U.a, 'select update_member($1, $2)', [id, JSON.stringify({ name: '甲二二', gender: 'F', ...data })]);
-    await expect(patch({ national_id: 'B200000004' })).rejects.toThrow('已報名');
+    await expect(patch({ national_id: 'B200000004' })).rejects.toThrow('無法使用');
     await expect(patch({ national_id: twId('M', 901) })).rejects.toThrow('不符');
     await expect(patch({ national_id: 'B200000005' })).rejects.toThrow('national_id');
     await expect(patch({ birthday: '2999-01-01' })).rejects.toThrow('生日');
@@ -732,5 +736,48 @@ describe('活動指南頁面', () => {
     await expect(
       as(U.admin, `update guide_pages set content = repeat('a', 6000001) where id = 'venue'`),
     ).rejects.toThrow('guide_pages_content_check');
+  });
+});
+
+describe('資安強化（2026-11-23 評估）', () => {
+  const bare = '00000000-0000-0000-0000-0000000000e4'; // 未經邀請碼、直接呼叫 API 註冊的帳號
+
+  it('未綁定任何身分的帳號讀不到活動指南與公司名稱；窗口、廠商、管理員可以', async () => {
+    await signUp(bare, 'bare@x.tw');
+    expect((await db.query('select 1 from profiles where id = $1', [bare])).rows).toHaveLength(1);
+    expect((await as(bare, 'select id from guide_pages')).rows).toEqual([]);
+    expect((await as(bare, 'select * from org_names()')).rows).toEqual([]);
+    for (const user of [U.f, U.v1, U.admin]) {
+      expect((await as(user, 'select id from guide_pages')).rows).toHaveLength(5);
+      expect((await as(user, 'select * from org_names()')).rows.length).toBeGreaterThan(0);
+    }
+    await expect(asAnon('select public.is_participant()')).rejects.toThrow('permission denied');
+  });
+
+  it('未登入角色不能直接存取敏感資料表；活動設定與項目仍可讀、邀請碼查詢仍可用', async () => {
+    for (const t of ['members', 'member_private', 'organizations', 'teams', 'team_orgs', 'profiles', 'event_entries']) {
+      await expect(asAnon(`select * from ${t} limit 1`)).rejects.toThrow('permission denied');
+    }
+    expect((await asAnon('select id from settings')).rows).toHaveLength(1);
+    expect((await asAnon('select id from events')).rows.length).toBeGreaterThan(0);
+    await expect(asAnon(`update settings set venue = 'x'`)).rejects.toThrow('permission denied');
+    await expect(asAnon(`delete from events`)).rejects.toThrow('permission denied');
+    await expect(asAnon('select * from lookup_invite($1)', ['NOPE0000'])).rejects.toThrow('邀請碼錯誤');
+  });
+
+  it('活動指南不能新增或刪除頁面（Supabase 預設授權已撤銷）', async () => {
+    await expect(as(U.admin, `insert into guide_pages (id) values ('x')`)).rejects.toThrow('permission denied');
+    await expect(as(U.v1, `delete from guide_pages`)).rejects.toThrow('permission denied');
+  });
+
+  it('身分證重複時不透露證號已被登記', async () => {
+    const existing = (await db.query<{ national_id: string }>('select national_id from member_private where national_id is not null limit 1'))
+      .rows[0].national_id;
+    const gender = ['1', '8'].includes(existing[1]) ? 'M' : 'F';
+    const err = await addMembers(U.f, team.w1, org['戊'], [row('重複者', gender, existing)]).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('無法使用');
+    expect((err as Error).message).not.toContain(existing);
+    expect((err as Error).message).not.toContain('已報名');
   });
 });

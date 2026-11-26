@@ -61,6 +61,7 @@
 | `20261122000000_optional_member_fields.sql` | 證號、生日、用餐改為選填 | 2026-11-19 |
 | `20261123000000_vendor_role.sql` | 用餐新增「葷食不吃豬」、委外廠商角色（`vendors`、`vendor_contacts`、隱碼 RPC） | 2026-11-20 |
 | `20261124000000_guide_pages.sql` | 活動指南五個頁面（`guide_pages`）；登入可讀、管理員與委外廠商可改 | 2026-11-20 |
+| `20261125000000_security_hardening.sql` | 資安強化：已綁定身分才能讀指南與公司名稱（`is_participant`）、身分證重複訊息不透露、anon 撤銷敏感資料表權限、指南不可新增刪除 | 2026-11-26 |
 
 **正式資料與種子資料的差異**：健力（powerlifting）的女性下限在正式資料庫是 **3**，migration 種子與 `demoSeed.ts` 仍是 4。項目設定以資料庫為準，程式不寫死。
 
@@ -147,7 +148,7 @@
 
 ### 測試與驗證技巧
 - 單元 + 資料庫測試：`npm test`（PGlite 實際跑全部 migration 並模擬 `auth.uid()`、anon / authenticated）。DB 測試輔助函式：`as`、`asAnon`、`addMembers`、`row`、`memberId`、`twId(gender, seq)`；測試用證號要注意性別碼（男 `A1…`、女 `B2…`），否則會先觸發「性別不符」。
-- 展示模式資料存在 localStorage `hexagon-sportday-demo-v8`；展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`），委外廠商為 `VENDOR01`；登入頁有各角色（含委外廠商）的快速登入按鈕。
+- 展示模式資料存在 localStorage `hexagon-sportday-demo-v9`；展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`），委外廠商為 `VENDOR01`；登入頁有各角色（含委外廠商）的快速登入按鈕。
 - 內建瀏覽器窗格很窄，視覺檢查改用 playwright-core + 系統 Edge 截圖（之前的腳本放在舊工作階段的暫存資料夾，已不可用，需要時重新安裝 / 撰寫）。窗格被隱藏時截圖會是全黑，改用 `javascript_tool` 讀 DOM 與 `getBoundingClientRect` 檢查版面。
 - 原生拖曳（HTML5 drag & drop）無法用 CDP 滑鼠事件驅動；測試拖曳邏輯請 dispatch 合成的 `DragEvent`（帶 `DataTransfer`），或用觸控的「點選人偶 → 點項目框」模式。
 - 用 Bash heredoc 跑 Python 改檔時，`\t` / `\n` 會被轉成真的 Tab / 換行而弄壞原始碼；內容含反引號（JS 樣板字串）的 heredoc 在 Bash 工具中也會解析失敗。請先用 Write 工具把改檔腳本寫成 `.py`（放暫存資料夾）再執行，或直接用編輯工具。
@@ -155,6 +156,9 @@
 ---
 
 ## 8. 待辦與未驗證事項
+
+- [ ] **資安強化（2026-11-23，未提交）**：依本機的資安評估報告（`資安評估報告_2026-11-23.md`，已列入 `.git/info/exclude`，**不可提交到公開 repo**）實作 M1、M3、L1、L2、L4。`20261125000000_security_hardening.sql` 已於 2026-11-26 套用並以未登入身分驗證（敏感資料表與 `is_participant` / `org_names` 皆回 42501，`settings`、`events`、`lookup_invite` 照常）。推送後到正式站監聽 `securitypolicyviolation` 確認 CSP 沒有擋到正常功能。
+- [ ] 資安評估中需使用者自行處理的設定：Supabase / GitHub 兩步驟驗證、密碼長度與 Leaked password protection、收斂各隊窗口名額、Dependabot、個資匯出與清除流程（見報告第 6、7 節）。
 
 - [ ] **活動指南正式站實測**：`20261124000000_guide_pages.sql` 已套用（anon 查詢 `guide_pages` 回 `42501`，表示資料表存在且未登入讀不到）。尚未驗證：五列預設資料（可在 SQL Editor 執行 `select id from guide_pages`）、實際編輯存檔，以及大內容（數 MB 圖片）是否會被 Supabase API 的請求大小限制擋下。
 

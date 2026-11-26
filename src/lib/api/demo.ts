@@ -72,6 +72,11 @@ export function createDemoApi(): DataApi {
     return vc ? (db.vendors.find((v) => v.id === vc.vendor_id) ?? null) : null;
   };
   const isVendor = () => !!myVendor();
+  /** 模擬 is_participant()：管理員、委外廠商或已綁定隊伍的窗口 */
+  const requireParticipant = () => {
+    requireUser();
+    if (!isAdmin() && !isVendor() && myContacts().length === 0) fail('權限不足');
+  };
   /** 活動設定與比賽項目：管理員與委外廠商可改 */
   const requireAdminOrVendor = () => {
     if (!isAdmin() && !isVendor()) fail('權限不足');
@@ -129,7 +134,8 @@ export function createDemoApi(): DataApi {
     const dup =
       clean.national_id &&
       db.members.find((m) => m.id !== exceptMemberId && m.private?.national_id === clean.national_id);
-    if (dup) fail(`身分證字號 ${clean.national_id} 已報名，同一人不可重複報名`);
+    // 不透露證號已被登記（同 add_members / update_member）
+    if (dup) fail(`「${clean.name}」的身分證字號無法使用，請確認是否輸入正確；如有疑問請洽活動小組`);
     return clean;
   }
 
@@ -317,12 +323,12 @@ export function createDemoApi(): DataApi {
     },
 
     async listGuidePages() {
-      requireUser();
+      requireParticipant();
       return copy(db.guidePages);
     },
 
     async getGuidePage(id) {
-      requireUser();
+      requireParticipant();
       return copy(db.guidePages.find((p) => p.id === id) ?? null);
     },
 
@@ -342,7 +348,7 @@ export function createDemoApi(): DataApi {
     },
 
     async listOrgNames() {
-      requireUser();
+      requireParticipant();
       return db.organizations.map((o) => ({ id: o.id, name: o.name }));
     },
 
@@ -515,7 +521,7 @@ export function createDemoApi(): DataApi {
       for (const input of inputs) {
         const clean = assertMemberInput(input);
         if (clean.national_id && added.some((m) => m.private?.national_id === clean.national_id)) {
-          fail(`身分證字號 ${clean.national_id} 已報名，同一人不可重複報名`);
+          fail(`這批資料中有重複的身分證字號（${clean.name}）`);
         }
         added.push({ id: crypto.randomUUID(), team_id: teamId, org_id: orgId, ...splitInput(clean) });
       }

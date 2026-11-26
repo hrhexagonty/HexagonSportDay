@@ -21,7 +21,7 @@ npm run build                                # typecheck + vite build → dist/
 ```
 
 沒有 ESLint；型別檢查（strict、noUnusedLocals）即為主要靜態檢查。
-`supabase/tests/migration.test.ts` 以 PGlite（WASM Postgres）實際執行所有 migration，並模擬 Supabase 的 `auth.uid()` 與 `anon` / `authenticated` 角色來驗證 RLS、trigger、RPC，不需要 Docker 或 Supabase 專案。
+`supabase/tests/migration.test.ts` 以 PGlite（WASM Postgres）實際執行所有 migration，並模擬 Supabase 的 `auth.uid()` 與 `anon` / `authenticated` 角色來驗證 RLS、trigger、RPC，不需要 Docker 或 Supabase 專案。測試環境也模擬 Supabase 的預設授權（public schema 新資料表 / 函式自動 grant 給 anon、authenticated），所以「只靠 RLS 擋」與「已 revoke」的差別測得出來。
 
 ## 架構重點
 
@@ -42,6 +42,9 @@ npm run build                                # typecheck + vite build → dist/
 - `members`（姓名、性別、所屬公司 `org_id`）：同隊窗口都看得到，用於安排項目選手；但只能新增 / 修改 / 刪除**自己以該公司身分加入（`is_team_org_contact`）**的隊員。`(team_id, org_id)` 有複合外鍵指向 `team_orgs`。
 - `member_private`（身分證 / 居留證、生日、手機、尺寸、用餐、特殊需求）：**只有「該隊 × 該公司」的窗口與管理員**看得到；前端 `Member.private === null` 代表無權檢視或已被清除。例外是用餐習慣：聯隊其他公司的窗口也要看得到，透過唯讀的 `member_diets()` 只開放 `diet` 一欄（前端為 `Member.diet`），不要為此放寬 `member_private` 的 RLS。`national_id` 全活動唯一。
 - 隊員只有**姓名、性別必填**：`member_private` 的證號、生日、用餐都可為 null（新增隊員時一律建立 `member_private` 列，未填欄位存 null；有填才檢查格式、檢查碼、性別一致、唯一）。名單以 `member.ts` 的 `missingFields` 標示「待補」，不阻擋任何寫入或報名。
+- **已綁定身分**（`is_participant()`：管理員、委外廠商或有 `team_contacts` 的窗口）才能讀活動指南與 `org_names()`。Auth 允許直接呼叫 API 註冊且不驗證信箱，未經邀請碼的帳號雖然「已登入」，但不應看到任何活動資料；新增「登入者可讀」的資料時請用 `is_participant()`，不要用 `auth.uid() is not null`。
+- 未登入角色（anon）只對 `settings`、`events` 有讀取權，其餘資料表都已 revoke（Supabase 預設會 grant，新增資料表時記得 revoke）；可呼叫的函式只有 `lookup_invite` / `lookup_team_invite`。
+- 身分證重複（unique violation）一律回「身分證字號無法使用…請洽活動小組」，不顯示證號、不說「已報名」，避免被用來查詢某人是否參加。
 - `organizations`、`team_invites`、他人的 `team_contacts` 只有管理員讀得到；窗口取公司名稱用 `org_names()`，取自己的隊伍用 `my_teams()`；未登入的註冊頁只能用 `lookup_invite(邀請碼)` 查出對應隊伍與公司（或委外廠商），前台不公開隊伍清單。隊伍與廠商邀請碼共用輸入框，`invite_code_unique_across` trigger 確保兩表不重複。
 - **委外廠商**（`SessionInfo.role = 'vendor'`）：`vendors`（廠商名稱、邀請碼、`account_limit`，僅管理員可讀寫，後台「窗口與邀請碼」下方管理）→ `vendor_contacts`（帳號 ⇄ 廠商，一個帳號一家）。`profiles.role` 仍為 `org_admin`，身分由 `is_vendor()`（有 `vendor_contacts` 列）判定，管理員解除或刪除廠商即失去權限。註冊時 user metadata 帶 `vendor_code`，由 `handle_new_user` 呼叫 `bind_vendor`；廠商帳號與隊伍窗口不可兼任（`bind_vendor` / `bind_team_contact` 互擋）。
   - 可見範圍：`members`、`event_entries`、`org_squads`、`org_squad_members` 有唯讀 select 政策；**不能直接讀 `teams`、`team_orgs`、`member_private`**，改由 `vendor_teams()`（隊長電話隱碼）、`vendor_member_private()`（證號 `A12****789`、生日 `1990-**-**`、手機 `0912***678`；尺寸、用餐、特殊需求照常）取得。看不到 `organizations`（用 `org_names()`）、`team_invites`、`team_contacts`、`vendors`。
@@ -51,7 +54,7 @@ npm run build                                # typecheck + vite build → dist/
 - `event_entries` 不存 team_id，隊伍經由 member 推得；聯隊內任一公司都可為全隊安排選手。
 - 公司組隊：該公司**任一隊**的窗口（`is_org_contact`）都能看同仁名單 `org_roster()`（跨分隊，只有姓名 / 性別 / 分隊，不含個資）並管理該公司的隊伍；可組多隊。只能選同公司同仁、不超過人數上限；送出時檢查人數與女性下限；已送出的隊伍不能加減人、刪除，也不能刪除其中的隊員（需先取消送出）；管理員不受此限。截止後只有管理員能異動。
 - `events` 為資料驅動，程式不應寫死特定項目；`category` 除了標示，只決定報名方式：`powerlifting` 以公司組隊（`rules.ts` 的 `isCompanyEvent` / `companyEvents()`，DB 端為 `org_squads_before_write`），其餘以隊伍報名（`teamEvents()`）。公司組隊項目不可寫入 `event_entries`，也不計入「每人最多 N 項」；改版前留下的健力 `event_entries` 未刪除，只是不顯示、不計入。`events.rules`（純文字）、`events.video_url`（只接受 http/https）由管理員編輯。
-- **活動指南**（`guide_pages`：`id`、`content` HTML、`updated_at`）：預先建立五列（venue / schedule / uniforms / meals / transport，對應 `src/lib/guide.ts` 的 `GUIDE_PAGES`），只能 update 不能新增刪除；登入者可讀（anon 無權限），管理員與委外廠商可改；`content` 上限 6,000,000 bytes（前端 `MAX_GUIDE_BYTES` 5MB）。圖片以壓縮後的 data URI 內嵌（`compressImage`：最長邊 1600px、JPEG），不使用 Storage。
+- **活動指南**（`guide_pages`：`id`、`content` HTML、`updated_at`）：預先建立五列（venue / schedule / uniforms / meals / transport，對應 `src/lib/guide.ts` 的 `GUIDE_PAGES`），只能 update 不能新增刪除（insert / delete 權限已 revoke）；已綁定身分者可讀（`is_participant()`），管理員與委外廠商可改；`content` 上限 6,000,000 bytes（前端 `MAX_GUIDE_BYTES` 5MB）。圖片以壓縮後的 data URI 內嵌（`compressImage`：最長邊 1600px、JPEG），不使用 Storage。
   - **HTML 一律經 `src/lib/richText.ts` 的 `sanitizeHtml`（DOMPurify）過濾**：顯示（`RichContent`）與存檔前都要過濾；資料庫不檢查 HTML 內容。只允許 YouTube / Google 地圖 iframe，禁止 script、事件屬性、style 標籤、表單、id/name；圖片只允許 `data:image` 與 https。`.rich-content` 以 `contain: paint` 防止內容中的 fixed 元素蓋住頁面。不要在其他地方用 `dangerouslySetInnerHTML` 顯示未過濾的內容。
   - 編輯器 `src/components/RichText.tsx` 的 `RichEditor`：contenteditable + `execCommand`；貼上 / 拖曳圖片自動壓縮、貼上單一網址自動轉影片 / 連結、貼上 HTML 先過濾；「原始碼」模式以 `#圖片-N` 佔位取代 data URI（`toSourceView`）。
 - 管理員帳號：網站註冊必須有隊伍邀請碼，因此管理員請在 Supabase Dashboard → Authentication → Add user 建立，再把 `profiles.role` 改為 `super_admin`。
@@ -68,10 +71,13 @@ npm run build                                # typecheck + vite build → dist/
 | 委外廠商隱碼（證號前 3 後 3、手機前 4 後 3、生日只留年份；太短全遮） | `mask_middle`、`vendor_member_private`、`vendor_teams` | `src/lib/mask.ts`（展示模式） |
 | 委外廠商帳號數上限、不可兼任窗口、邀請碼不可與隊伍邀請碼重複 | `bind_vendor`、`bind_team_contact`、`invite_code_unique_across` | `demo.ts` 的 `bindVendor`、`bind`、`codeTaken` |
 | 活動指南：頁面清單、大小上限、可編輯者 | `guide_pages` 預設列、`guide_pages_content_check`、RLS | `src/lib/guide.ts`、`richText.ts` 的 `MAX_GUIDE_BYTES`、`demo.ts` |
+| 已綁定身分才能讀活動指南、公司名稱 | `is_participant()`、`guide_pages_read`、`org_names()` | `demo.ts` 的 `requireParticipant`、`/guide` 路由守衛 `member`、導覽列 `GuideMenu` 顯示條件 |
+| 身分證重複訊息不透露證號 | `add_members`、`update_member` | `supabase.ts` 的 `translateError`、`demo.ts` |
+| 活動指南 iframe 白名單 | — | `richText.ts` 的 `EMBED_PATTERNS`、`vite.config.ts` CSP 的 `frame-src` |
 | 人數 / 女性下限（「未完成」，不阻擋寫入） | — | `rules.ts` 的 `evaluate*` |
 
 另外需同步的重複資料：比賽項目初始資料（migration 尾端 ↔ `src/lib/api/demoSeed.ts` 的 `DEMO_EVENTS`）、資料表欄位（migration ↔ `src/lib/types.ts`）。
-`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入）已於 2026-11-18 套用；`20261119000000_invite_first.sql`（先輸入邀請碼）已於 2026-11-18 套用；`20261120000000_company_squads.sql`（競賽規則欄位、公司組隊、`org_roster`）已於 2026-11-19 套用；`20261121000000_member_diets.sql`（聯隊其他公司可看用餐習慣）已於 2026-11-19 套用；`20261122000000_optional_member_fields.sql`（證號、生日、用餐改為選填）已於 2026-11-19 套用；`20261123000000_vendor_role.sql`（用餐新增「葷食不吃豬」、委外廠商角色）已於 2026-11-20 套用；`20261124000000_guide_pages.sql`（活動指南）已於 2026-11-20 套用。已套用的 migration 不可再修改。前端依賴新 schema 時，SQL 套用並確認前不可推送。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
+`20261117000000_init.sql` 已於 2026-11-17 以 Supabase SQL Editor 套用到正式專案（ref `sxonocgtoupelrdolumj`），**不可再修改**；`20261118000000_team_login.sql`（改為以隊伍登入）已於 2026-11-18 套用；`20261119000000_invite_first.sql`（先輸入邀請碼）已於 2026-11-18 套用；`20261120000000_company_squads.sql`（競賽規則欄位、公司組隊、`org_roster`）已於 2026-11-19 套用；`20261121000000_member_diets.sql`（聯隊其他公司可看用餐習慣）已於 2026-11-19 套用；`20261122000000_optional_member_fields.sql`（證號、生日、用餐改為選填）已於 2026-11-19 套用；`20261123000000_vendor_role.sql`（用餐新增「葷食不吃豬」、委外廠商角色）已於 2026-11-20 套用；`20261124000000_guide_pages.sql`（活動指南）已於 2026-11-20 套用；`20261125000000_security_hardening.sql`（資安強化）已於 2026-11-26 套用。已套用的 migration 不可再修改。前端依賴新 schema 時，SQL 套用並確認前不可推送。schema 變更請新增 `supabase/migrations/<timestamp>_<name>.sql`，先跑 `npx vitest run supabase/tests`，再請使用者於 SQL Editor 執行（此專案未使用 Supabase CLI 的 migration 紀錄；若日後改用 CLI，需先 `supabase migration repair --status applied 20261117000000`）。
 
 ### 環境
 - 本機 `.env.local`（不提交）已指向**正式** Supabase：`npm run dev` 的操作會寫入正式資料庫。測試請用 `npm run dev:demo`（`.claude/launch.json` 的 `dev-demo`，port 5174）。
@@ -85,6 +91,8 @@ npm run build                                # typecheck + vite build → dist/
 - `SessionInfo.teams` 為帳號綁定的隊伍與代表公司；隊伍頁以此決定 `myOrgId`（可編輯 / 檢視個資的公司）。
 - 批次匯入欄位順序定義在 `src/lib/importParse.ts` 的 `IMPORT_COLUMNS`（生日支援民國年）。
 - 部署：`.github/workflows/deploy.yml` 推送 `main` 即測試 + 建置 + 部署；Supabase 連線資訊放 GitHub Actions secrets。
+- **CSP**：`vite.config.ts` 的 `securityMeta` 只在 build 時把 Content-Security-Policy 與 Referrer-Policy 以 meta 加進 `index.html`（GitHub Pages 不能設回應標頭；開發伺服器有 inline script 所以不套用）。`connect-src` 由 `VITE_SUPABASE_URL` 產生；新增外部資源（字型、iframe、API）時要同步放寬。驗證方式：`npx vite build --mode demo --outDir node_modules/.preview-demo --emptyOutDir` 後以 `.claude/launch.json` 的 `preview-demo`（port 5175）開啟，監聽 `securitypolicyviolation` 事件。
+- CSV 匯出（`src/lib/csv.ts`）：`= + - @ Tab CR` 開頭的欄位前加單引號，避免 Excel 公式注入。
 - 資料載入用 `src/lib/useAsync.ts`（reload 時保留舊資料避免閃爍）；訊息用 `useToast()`。
 
 ## UI 設計規範（Obsidian & Lime 玻璃擬態）

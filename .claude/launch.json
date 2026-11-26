@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:demo", "--", "--port", "5174", "--strictPort"],
       "port": 5174
+    },
+    {
+      "name": "preview-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--mode", "demo", "--outDir", "node_modules/.preview-demo", "--port", "5175", "--strictPort"],
+      "port": 5175
     }
   ]
 }

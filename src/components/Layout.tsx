@@ -224,7 +224,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               活動資訊
             </NavLink>
             {session && <NavLink to="/rules">競賽規則</NavLink>}
-            {session && <GuideMenu />}
+            {session && (isAdmin || isVendor || session.teams.length > 0) && <GuideMenu />}
             {session && !isAdmin && session.teams.length > 0 && (
               <>
                 <NavLink to="/org" className={activeIf(onTeamPage)}>

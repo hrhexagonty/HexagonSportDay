@@ -5,8 +5,8 @@ export type Cell = string | number | null | undefined;
 function escapeCell(v: Cell): string {
   if (v == null) return '';
   let s = String(v);
-  // 避免 CSV 公式注入（=、@ 開頭會被 Excel 當公式執行）
-  if (/^[=@]/.test(s)) s = `'${s}`;
+  // 避免 CSV 公式注入：=、+、-、@、Tab、CR 開頭會被 Excel 當公式（OWASP 建議清單）
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

@@ -21,7 +21,7 @@ export default function App() {
         <Route
           path="/guide/:pageId"
           element={
-            <RequireAuth need="any">
+            <RequireAuth need="member">
               <Guide />
             </RequireAuth>
           }

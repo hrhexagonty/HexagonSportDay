@@ -26,7 +26,7 @@ const PAGE_SIZE = 1000; // Supabase 預設單次最多回傳 1000 筆
 function translateError(error: PostgrestError): string {
   const text = `${error.message} ${error.details ?? ''}`;
   if (error.code === '23505') {
-    if (text.includes('national_id')) return '身分證字號已報名，同一人不可重複報名';
+    if (text.includes('national_id')) return '身分證字號無法使用，請確認是否輸入正確；如有疑問請洽活動小組';
     if (text.includes('teams_name')) return '隊名已被使用，請換一個';
     if (text.includes('organizations_name')) return '公司名稱已存在';
     if (text.includes('invite_code')) return '邀請碼已被使用，請換一組';
