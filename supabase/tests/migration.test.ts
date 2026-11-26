@@ -187,11 +187,12 @@ describe('管理員建立公司與隊伍', () => {
 describe('前台註冊與綁定隊伍', () => {
   it('未登入先輸入邀請碼，帶出對應的隊伍與公司；前台取不到隊伍清單與邀請碼', async () => {
     const r = await asAnon<{ team_id: string; team_name: string; org_name: string; is_full: boolean }>(
-      'select team_id, team_name, org_name, is_full from lookup_team_invite($1)',
+      'select team_id, team_name, org_name, is_full from lookup_invite($1)',
       [` ${(await codeOf('乙丙聯隊', '丙')).toLowerCase()} `],
     );
     expect(r.rows).toEqual([{ team_id: team.merged, team_name: '乙丙聯隊', org_name: '丙', is_full: false }]);
-    await expect(asAnon('select * from lookup_team_invite($1)', ['NOPE0000'])).rejects.toThrow('邀請碼錯誤');
+    // 查錯回傳空結果（前端顯示「邀請碼錯誤」）
+    expect((await asAnon('select * from lookup_invite($1)', ['NOPE0000'])).rows).toHaveLength(0);
     await expect(asAnon('select * from team_invites')).rejects.toThrow('permission denied');
     const gone = await db.query<{ a: string | null; b: string | null }>(
       `select to_regprocedure('public.team_options()')::text a, to_regprocedure('public.check_team_invite(uuid, text)')::text b`,
@@ -215,7 +216,7 @@ describe('前台註冊與綁定隊伍', () => {
   it('窗口人數達上限後無法再綁定，查詢邀請碼時標示已滿', async () => {
     await as(U.admin, 'update teams set contact_limit = 1 where id = $1', [team.a]);
     await expect(signUp(U.d, 'd@x.tw', { team_id: team.a, invite_code: 'JIA0001' })).rejects.toThrow('名額已滿');
-    const r = await asAnon<{ is_full: boolean }>('select is_full from lookup_team_invite($1)', ['JIA0001']);
+    const r = await asAnon<{ is_full: boolean }>('select is_full from lookup_invite($1)', ['JIA0001']);
     expect(r.rows[0].is_full).toBe(true);
   });
 
@@ -568,7 +569,7 @@ describe('委外廠商', () => {
       await codeOf('戊一隊', '戊'),
     ]);
     expect(t.rows).toEqual([{ kind: 'team', team_id: team.w1, team_name: '戊一隊', org_name: '戊', vendor_name: null }]);
-    await expect(asAnon('select * from lookup_invite($1)', ['NOPE0000'])).rejects.toThrow('邀請碼錯誤');
+    expect((await asAnon('select * from lookup_invite($1)', ['NOPE0000'])).rows).toHaveLength(0);
   });
 
   it('以廠商邀請碼註冊；名額已滿或邀請碼錯誤則整筆註冊失敗', async () => {
@@ -762,7 +763,7 @@ describe('資安強化（2026-11-23 評估）', () => {
     expect((await asAnon('select id from events')).rows.length).toBeGreaterThan(0);
     await expect(asAnon(`update settings set venue = 'x'`)).rejects.toThrow('permission denied');
     await expect(asAnon(`delete from events`)).rejects.toThrow('permission denied');
-    await expect(asAnon('select * from lookup_invite($1)', ['NOPE0000'])).rejects.toThrow('邀請碼錯誤');
+    expect((await asAnon('select * from lookup_invite($1)', ['NOPE0000'])).rows).toHaveLength(0);
   });
 
   it('活動指南不能新增或刪除頁面（Supabase 預設授權已撤銷）', async () => {
@@ -779,5 +780,69 @@ describe('資安強化（2026-11-23 評估）', () => {
     expect((err as Error).message).toContain('無法使用');
     expect((err as Error).message).not.toContain(existing);
     expect((err as Error).message).not.toContain('已報名');
+  });
+});
+
+describe('邀請碼查詢節流（2026-11-23 評估 M2）', () => {
+  /** 模擬 PostgREST 帶入的請求標頭（request.headers）後以未登入身分執行 */
+  async function asAnonFrom<T = Record<string, unknown>>(headers: Record<string, string>, sql: string, params: unknown[] = []) {
+    await db.query(`select set_config('request.headers', $1, false)`, [JSON.stringify(headers)]);
+    try {
+      return await asAnon<T>(sql, params);
+    } finally {
+      await db.query(`select set_config('request.headers', '', false)`);
+    }
+  }
+  const lookup = (headers: Record<string, string>, code: string) =>
+    asAnonFrom<{ kind: string }>(headers, 'select kind from lookup_invite($1)', [code]);
+  const failures = async () =>
+    (await db.query<{ ip: string; source: string }>('select ip, source from invite_lookup_failures order by id')).rows;
+
+  it('查錯時記錄來源 IP（cf-connecting-ip 優先，其次 x-real-ip、x-forwarded-for 第一段）；查對不記錄', async () => {
+    await db.exec('delete from invite_lookup_failures');
+    expect((await lookup({ 'cf-connecting-ip': '198.51.100.1', 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }, 'NOPE0001')).rows).toEqual([]);
+    await lookup({ 'x-real-ip': '198.51.100.2', 'x-forwarded-for': '203.0.113.9' }, 'NOPE0002');
+    await lookup({ 'x-forwarded-for': ' 203.0.113.9 , 10.0.0.1' }, 'NOPE0003');
+    await lookup({}, 'NOPE0004');
+    expect(await failures()).toEqual([
+      { ip: '198.51.100.1', source: 'cf-connecting-ip' },
+      { ip: '198.51.100.2', source: 'x-real-ip' },
+      { ip: '203.0.113.9', source: 'x-forwarded-for' },
+      { ip: 'unknown', source: 'none' },
+    ]);
+    expect((await lookup({ 'cf-connecting-ip': '198.51.100.1' }, await codeOf('戊一隊', '戊'))).rows).toEqual([{ kind: 'team' }]);
+    expect(await failures()).toHaveLength(4);
+  });
+
+  it('同一 IP 15 分鐘內查錯 20 次即暫停（正確邀請碼也查不到），其他 IP 不受影響；超過 15 分鐘後恢復', async () => {
+    await db.exec('delete from invite_lookup_failures');
+    const code = await codeOf('戊一隊', '戊');
+    const a = { 'cf-connecting-ip': '198.51.100.10' };
+    for (let i = 0; i < 20; i++) await lookup(a, `NOPE${1000 + i}`);
+    await expect(lookup(a, code)).rejects.toThrow('次數過多');
+    expect((await lookup({ 'cf-connecting-ip': '198.51.100.11' }, code)).rows).toEqual([{ kind: 'team' }]);
+    // 登入後查詢同樣受限
+    await db.query(`select set_config('request.headers', $1, false)`, [JSON.stringify(a)]);
+    await expect(as(U.a, 'select * from lookup_invite($1)', [code])).rejects.toThrow('次數過多');
+    await db.query(`select set_config('request.headers', '', false)`);
+
+    await db.exec(`update invite_lookup_failures set created_at = now() - interval '16 minutes'`);
+    expect((await lookup(a, code)).rows).toEqual([{ kind: 'team' }]);
+  });
+
+  it('一天前的失敗紀錄會在下次記錄時清除', async () => {
+    await db.exec('delete from invite_lookup_failures');
+    await lookup({ 'cf-connecting-ip': '198.51.100.20' }, 'NOPE0005');
+    await db.exec(`update invite_lookup_failures set created_at = now() - interval '25 hours'`);
+    await lookup({ 'cf-connecting-ip': '198.51.100.21' }, 'NOPE0006');
+    expect(await failures()).toEqual([{ ip: '198.51.100.21', source: 'cf-connecting-ip' }]);
+  });
+
+  it('未登入與登入者都讀不到失敗紀錄；舊版 lookup_team_invite 已撤銷執行權', async () => {
+    await expect(asAnon('select * from invite_lookup_failures')).rejects.toThrow('permission denied');
+    await expect(as(U.admin, 'select * from invite_lookup_failures')).rejects.toThrow('permission denied');
+    await expect(as(U.a, 'delete from invite_lookup_failures')).rejects.toThrow('permission denied');
+    await expect(asAnon('select * from lookup_team_invite($1)', ['NOPE0000'])).rejects.toThrow('permission denied');
+    await expect(as(U.a, 'select * from lookup_team_invite($1)', ['NOPE0000'])).rejects.toThrow('permission denied');
   });
 });

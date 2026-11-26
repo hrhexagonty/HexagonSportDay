@@ -62,6 +62,7 @@
 | `20261123000000_vendor_role.sql` | 用餐新增「葷食不吃豬」、委外廠商角色（`vendors`、`vendor_contacts`、隱碼 RPC） | 2026-11-20 |
 | `20261124000000_guide_pages.sql` | 活動指南五個頁面（`guide_pages`）；登入可讀、管理員與委外廠商可改 | 2026-11-20 |
 | `20261125000000_security_hardening.sql` | 資安強化：已綁定身分才能讀指南與公司名稱（`is_participant`）、身分證重複訊息不透露、anon 撤銷敏感資料表權限、指南不可新增刪除 | 2026-11-26 |
+| `20261126000000_invite_throttle.sql` | 邀請碼查詢節流：查錯記錄 IP（`invite_lookup_failures`）並回傳空結果，同一 IP 15 分鐘查錯 20 次暫停；撤銷 `lookup_team_invite` | 2026-11-26 |
 
 **正式資料與種子資料的差異**：健力（powerlifting）的女性下限在正式資料庫是 **3**，migration 種子與 `demoSeed.ts` 仍是 4。項目設定以資料庫為準，程式不寫死。
 
@@ -157,8 +158,10 @@
 
 ## 8. 待辦與未驗證事項
 
-- [ ] **資安強化（2026-11-23，未提交）**：依本機的資安評估報告（`資安評估報告_2026-11-23.md`，已列入 `.git/info/exclude`，**不可提交到公開 repo**）實作 M1、M3、L1、L2、L4。`20261125000000_security_hardening.sql` 已於 2026-11-26 套用並以未登入身分驗證（敏感資料表與 `is_participant` / `org_names` 皆回 42501，`settings`、`events`、`lookup_invite` 照常）。推送後到正式站監聽 `securitypolicyviolation` 確認 CSP 沒有擋到正常功能。
-- [ ] 資安評估中需使用者自行處理的設定：Supabase / GitHub 兩步驟驗證、密碼長度與 Leaked password protection、收斂各隊窗口名額、Dependabot、個資匯出與清除流程（見報告第 6、7 節）。
+- [x] **資安強化（2026-11-26 上線，`dcdafd4`）**：依本機的資安評估報告（`資安評估報告_2026-11-23.md`，已列入 `.git/info/exclude`，**不可提交到公開 repo**）完成 M1、M3、L1、L2、L4。`20261125000000_security_hardening.sql` 已套用並以未登入身分驗證（敏感資料表與 `is_participant` / `org_names` 皆回 42501，`settings`、`events`、`lookup_invite` 照常）；正式站未登入頁面監聽 `securitypolicyviolation` 為 0，使用者登入後檢查活動指南與後台也正常。報告中標為「可選」或「視需要」的項目（擋下沒有邀請碼的註冊、限制外部圖片、repo 改 private、換主機）使用者決定暫不處理。
+- [x] **邀請碼查詢節流（2026-11-26 套用）**：`20261126000000_invite_throttle.sql` 已套用，前端不需改版（空結果原本就顯示「邀請碼錯誤」）。正式環境實測：`lookup_team_invite` 回 42501；帶偽造 `X-Forwarded-For` / `X-Real-IP` 查假邀請碼回 `[]`，失敗紀錄的 `source` 為 `cf-connecting-ip`、IP 為真實來源（偽造值無效）；自帶 `CF-Connecting-IP` 的請求被 Cloudflare 以 403（error code 1000）擋下。
+- [x] Dependabot：2026-11-26 已以 `gh api` 開啟漏洞警示（vulnerability-alerts）與自動安全更新（automated-security-fixes）。Dependabot 的 PR 不會跑 CI（workflow 只在推送 `main` 時執行），合併後才在部署流程中跑測試，測試失敗就不會部署。
+- [ ] 資安評估中需使用者自行處理的設定：Supabase / GitHub 兩步驟驗證、密碼長度與 Leaked password protection、收斂各隊窗口名額、個資匯出與清除流程（見報告第 6、7 節）。
 
 - [ ] **活動指南正式站實測**：`20261124000000_guide_pages.sql` 已套用（anon 查詢 `guide_pages` 回 `42501`，表示資料表存在且未登入讀不到）。尚未驗證：五列預設資料（可在 SQL Editor 執行 `select id from guide_pages`）、實際編輯存檔，以及大內容（數 MB 圖片）是否會被 Supabase API 的請求大小限制擋下。
 
@@ -166,6 +169,6 @@
 - [ ] **正式站實測**：只填姓名、性別新增一位隊員，確認可存檔（為避免在正式資料庫產生測試資料，交接前未實測；資料庫是否已允許 null 依使用者回報判斷）。若出現「欄位不可為空」之類錯誤，代表 `20261122` 未套用成功。
 - [ ] 競賽規則頁的 YouTube 示範影片：嵌入畫面在預覽窗格顯示為黑畫面，實際播放未驗證。
 - [ ] 邀請碼便條 PDF 未實際列印測試裁切。
-- 已知殘留風險（已告知使用者）：新增隊員時若身分證重複，錯誤訊息會透露「此證號已報名」。
+- 已知殘留風險（已告知使用者）：身分證重複時訊息已改為不透露證號，但因資料庫仍拒絕重複寫入，「被拒絕」本身仍可用來推測某人已報名；要完全消除需改為允許重複、由管理員事後審核。
 - 建議（尚未處理，視使用者需要）：Supabase Auth 建議關閉「Confirm email」，或設定自訂 SMTP；內建寄信服務只寄給專案成員，公司窗口收不到驗證信。
 - 目前沒有進行中的實作任務。
