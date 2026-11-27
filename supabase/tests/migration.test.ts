@@ -846,3 +846,157 @@ describe('邀請碼查詢節流（2026-11-23 評估 M2）', () => {
     await expect(as(U.a, 'select * from lookup_team_invite($1)', ['NOPE0000'])).rejects.toThrow('permission denied');
   });
 });
+
+describe('公司地址（接駁車接送、樣衣寄送）', () => {
+  const bare = '00000000-0000-0000-0000-0000000000e4'; // 未綁定任何身分的帳號（資安強化測試建立）
+  type Addr = { shuttle_address: string | null; sample_address: string | null; sample_same: boolean };
+  const read = async (user: string, orgName: string) =>
+    (
+      await as<Addr>(user, 'select shuttle_address, sample_address, sample_same from org_addresses where org_id = $1', [
+        org[orgName],
+      ])
+    ).rows;
+  const upsert = (user: string, orgName: string, a: Partial<Addr>) =>
+    as(
+      user,
+      `insert into org_addresses (org_id, shuttle_address, sample_address, sample_same) values ($1, $2, $3, $4)
+       on conflict (org_id) do update set shuttle_address = excluded.shuttle_address,
+         sample_address = excluded.sample_address, sample_same = excluded.sample_same`,
+      [org[orgName], a.shuttle_address ?? null, a.sample_address ?? null, a.sample_same ?? false],
+    );
+
+  beforeAll(async () => {
+    await as(U.admin, 'update settings set registration_open = true where id = 1');
+  });
+
+  it('同公司任一分隊的窗口都能填寫並共用同一份；其他公司窗口、未綁定帳號、訪客讀寫不到', async () => {
+    await upsert(U.f, '戊', { shuttle_address: '台北市信義區一路 1 號', sample_address: '台北市信義區二路 2 號' });
+    expect(await read(U.g, '戊')).toEqual([
+      { shuttle_address: '台北市信義區一路 1 號', sample_address: '台北市信義區二路 2 號', sample_same: false },
+    ]);
+    await upsert(U.g, '戊', { shuttle_address: '台北市信義區三路 3 號', sample_same: true });
+    expect(await read(U.f, '戊')).toEqual([{ shuttle_address: '台北市信義區三路 3 號', sample_address: null, sample_same: true }]);
+
+    expect(await read(U.h, '戊')).toEqual([]);
+    expect(await read(bare, '戊')).toEqual([]);
+    await expect(upsert(U.h, '戊', { shuttle_address: '冒填' })).rejects.toThrow('row-level security');
+    expect((await as(U.h, `update org_addresses set shuttle_address = '冒改' where org_id = $1`, [org['戊']])).affectedRows).toBe(0);
+    await expect(asAnon('select * from org_addresses')).rejects.toThrow('permission denied');
+  });
+
+  it('去除空白、空字串存 null；選「同上」時清空樣衣地址；記錄更新時間；長度上限 200 字；不可改所屬公司', async () => {
+    await as(U.admin, `update org_addresses set updated_at = now() - interval '1 day' where org_id = $1`, [org['戊']]);
+    await upsert(U.f, '戊', { shuttle_address: '  桃園市中壢區四路 4 號 ', sample_address: '新竹市五路 5 號', sample_same: true });
+    expect(await read(U.f, '戊')).toEqual([{ shuttle_address: '桃園市中壢區四路 4 號', sample_address: null, sample_same: true }]);
+    const fresh = await db.query<{ fresh: boolean }>(
+      `select updated_at > now() - interval '1 minute' fresh from org_addresses where org_id = $1`,
+      [org['戊']],
+    );
+    expect(fresh.rows[0].fresh).toBe(true);
+
+    await upsert(U.f, '戊', { shuttle_address: '   ', sample_address: '新竹市五路 5 號' });
+    expect(await read(U.f, '戊')).toEqual([{ shuttle_address: null, sample_address: '新竹市五路 5 號', sample_same: false }]);
+
+    await expect(upsert(U.f, '戊', { shuttle_address: 'a'.repeat(201) })).rejects.toThrow('org_addresses_shuttle_address_check');
+    await expect(
+      as(U.admin, 'update org_addresses set org_id = $1 where org_id = $2', [org['己'], org['戊']]),
+    ).rejects.toThrow('不可變更');
+  });
+
+  it('委外廠商可讀全部但不能寫；管理員可代填；任何人都不能直接刪除', async () => {
+    await upsert(U.admin, '己', { shuttle_address: '台中市西屯區六路 6 號', sample_same: true });
+    expect(await read(U.v1, '己')).toEqual([{ shuttle_address: '台中市西屯區六路 6 號', sample_address: null, sample_same: true }]);
+    expect(await read(U.h, '己')).toHaveLength(1);
+    await expect(upsert(U.v1, '戊', { shuttle_address: '廠商改' })).rejects.toThrow('row-level security');
+    expect((await as(U.v1, `update org_addresses set shuttle_address = '廠商改'`)).affectedRows).toBe(0);
+    await expect(as(U.f, 'delete from org_addresses where org_id = $1', [org['戊']])).rejects.toThrow('permission denied');
+    await expect(as(U.admin, 'delete from org_addresses where org_id = $1', [org['戊']])).rejects.toThrow('permission denied');
+  });
+
+  it('報名截止後窗口不可修改，管理員可以', async () => {
+    await as(U.admin, 'update settings set registration_open = false where id = 1');
+    await expect(upsert(U.f, '戊', { shuttle_address: '截止後' })).rejects.toThrow('報名已截止');
+    await upsert(U.admin, '戊', { shuttle_address: '管理員代改' });
+    expect((await read(U.f, '戊'))[0].shuttle_address).toBe('管理員代改');
+    await as(U.admin, 'update settings set registration_open = true where id = 1');
+  });
+
+  it('刪除公司時一併刪除地址', async () => {
+    const id = (await as<{ id: string }>(U.admin, `insert into organizations (name) values ('庚') returning id`)).rows[0].id;
+    await as(U.admin, `insert into org_addresses (org_id, shuttle_address) values ($1, '高雄市七路 7 號')`, [id]);
+    await as(U.admin, 'delete from organizations where id = $1', [id]);
+    expect((await db.query('select 1 from org_addresses where org_id = $1', [id])).rows).toEqual([]);
+  });
+});
+
+describe('公司地址聯絡人（車長、樣衣收件人）', () => {
+  type Contacts = {
+    shuttle_leader_name: string | null;
+    shuttle_leader_phone: string | null;
+    sample_recipient_name: string | null;
+    sample_recipient_phone: string | null;
+  };
+  const COLS = ['shuttle_leader_name', 'shuttle_leader_phone', 'sample_recipient_name', 'sample_recipient_phone'] as const;
+  const readContacts = async (user: string, orgName: string) =>
+    (await as<Contacts>(user, `select ${COLS.join(', ')} from org_addresses where org_id = $1`, [org[orgName]])).rows;
+  const setContacts = (user: string, orgName: string, c: Partial<Contacts>) =>
+    as(
+      user,
+      `update org_addresses set shuttle_leader_name = $2, shuttle_leader_phone = $3,
+         sample_recipient_name = $4, sample_recipient_phone = $5 where org_id = $1`,
+      [org[orgName], ...COLS.map((k) => c[k] ?? null)],
+    );
+
+  beforeAll(async () => {
+    await as(U.admin, 'update settings set registration_open = true where id = 1');
+  });
+
+  it('窗口可填寫車長與樣衣收件人；去除空白、空字串存 null；委外廠商看得到完整電話，其他公司窗口看不到', async () => {
+    await setContacts(U.f, '戊', {
+      shuttle_leader_name: ' 王車長 ',
+      shuttle_leader_phone: '0912-345-678',
+      sample_recipient_name: '  ',
+      sample_recipient_phone: '(02) 2345-6789 #12',
+    });
+    const expected = {
+      shuttle_leader_name: '王車長',
+      shuttle_leader_phone: '0912-345-678',
+      sample_recipient_name: null,
+      sample_recipient_phone: '(02) 2345-6789 #12',
+    };
+    expect(await readContacts(U.g, '戊')).toEqual([expected]);
+    expect(await readContacts(U.v1, '戊')).toEqual([expected]);
+    expect(await readContacts(U.h, '戊')).toEqual([]);
+    await expect(asAnon('select shuttle_leader_phone from org_addresses')).rejects.toThrow('permission denied');
+  });
+
+  it('姓名上限 50 字；電話只能包含數字、空格與 + - ( ) #，6–30 字', async () => {
+    await expect(setContacts(U.f, '戊', { shuttle_leader_name: '王'.repeat(51) })).rejects.toThrow(
+      'org_addresses_shuttle_leader_name_check',
+    );
+    await expect(setContacts(U.f, '戊', { shuttle_leader_phone: '王小明' })).rejects.toThrow(
+      'org_addresses_shuttle_leader_phone_check',
+    );
+    await expect(setContacts(U.f, '戊', { sample_recipient_phone: '12345' })).rejects.toThrow(
+      'org_addresses_sample_recipient_phone_check',
+    );
+    await expect(setContacts(U.f, '戊', { sample_recipient_phone: '1'.repeat(31) })).rejects.toThrow(
+      'org_addresses_sample_recipient_phone_check',
+    );
+    await setContacts(U.f, '戊', { shuttle_leader_phone: '+886 912 345 678', sample_recipient_name: '李收件' });
+    expect((await readContacts(U.f, '戊'))[0]).toMatchObject({
+      shuttle_leader_phone: '+886 912 345 678',
+      sample_recipient_name: '李收件',
+    });
+  });
+
+  it('清除個資時一併清除車長與樣衣收件人的姓名、電話，地址保留', async () => {
+    await expect(as(U.f, 'select purge_private_data()')).rejects.toThrow('權限不足');
+    await as(U.admin, 'select purge_private_data()');
+    expect(await readContacts(U.admin, '戊')).toEqual([
+      { shuttle_leader_name: null, shuttle_leader_phone: null, sample_recipient_name: null, sample_recipient_phone: null },
+    ]);
+    const kept = await db.query<{ n: number }>('select count(*)::int n from org_addresses where shuttle_address is not null');
+    expect(kept.rows[0].n).toBeGreaterThan(0);
+  });
+});

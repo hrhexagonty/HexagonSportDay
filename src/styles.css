@@ -3356,3 +3356,59 @@ a.chip:hover {
   padding: 0.5rem 1.25rem 0.8rem;
   border-top: 1px solid var(--line-2);
 }
+
+/* =====================================================================
+   接駁車與樣衣寄送（「我的公司」頁、後台「接駁與樣衣」分頁）
+   ===================================================================== */
+.address-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+.address-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+.address-group-title {
+  font-size: 1rem;
+  letter-spacing: -0.03em;
+}
+.address-contact {
+  margin-top: 0.25rem;
+}
+/* 「樣衣寄送地址」標籤與「同上」勾選框同一列 */
+.address-sample-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.address-same {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.address-same input {
+  margin: 0;
+}
+.address-cell {
+  min-width: 14rem;
+  max-width: 28rem;
+  white-space: normal;
+  word-break: break-word;
+}
+.address-edit-row td {
+  background: var(--glass-2);
+}
+/* 窄螢幕：接駁車、樣衣寄送上下排列，姓名與電話改單欄 */
+@media (max-width: 760px) {
+  .address-groups,
+  .address-form .row-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

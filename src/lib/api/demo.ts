@@ -4,6 +4,7 @@ import { INVITE_CODE_PATTERN, normalizeInviteCode, randomInviteCode } from '../i
 import { maskPhone, maskPrivate } from '../mask';
 import { MAX_GUIDE_BYTES, byteSize } from '../richText';
 import { cleanMemberInput, validateMemberInput } from '../member';
+import { cleanAddressInput, validateAddressInput } from '../orgAddress';
 import {
   checkAddEntry,
   checkAddMembers,
@@ -17,14 +18,14 @@ import type { Member, MemberInput, Team } from '../types';
 import { createSeed, type DemoDb } from './demoSeed';
 import type { DataApi, InviteInfo } from './types';
 
-const STORAGE_KEY = 'hexagon-sportday-demo-v9';
+const STORAGE_KEY = 'hexagon-sportday-demo-v10';
 
 function load(): DemoDb {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb;
-      if (parsed.version === 9) return parsed;
+      if (parsed.version === 10) return parsed;
     }
   } catch {
     // localStorage 不可用或資料損毀時改用初始資料
@@ -375,6 +376,7 @@ export function createDemoApi(): DataApi {
       db.invites = db.invites.filter((i) => i.org_id !== id);
       db.contacts = db.contacts.filter((c) => c.org_id !== id);
       db.squads = db.squads.filter((s) => s.org_id !== id);
+      db.orgAddresses = db.orgAddresses.filter((a) => a.org_id !== id);
       db.organizations = db.organizations.filter((o) => o.id !== id);
       commit();
     },
@@ -551,6 +553,13 @@ export function createDemoApi(): DataApi {
         m.private = null;
         m.diet = null;
       });
+      // 同 purge_private_data()：車長、樣衣收件人的姓名與電話一併清除，地址保留
+      db.orgAddresses.forEach((a) => {
+        a.shuttle_leader_name = null;
+        a.shuttle_leader_phone = null;
+        a.sample_recipient_name = null;
+        a.sample_recipient_phone = null;
+      });
       commit();
       return n;
     },
@@ -638,6 +647,25 @@ export function createDemoApi(): DataApi {
       } else if (!submitted) {
         sq.submitted_at = null;
       }
+      commit();
+    },
+
+    async listOrgAddresses(orgId) {
+      requireUser();
+      // 模擬 org_addresses 的 RLS：管理員、委外廠商、該公司（任一隊）的窗口
+      return copy(db.orgAddresses.filter((a) => (canManageOrg(a.org_id) || isVendor()) && (!orgId || a.org_id === orgId)));
+    },
+
+    async saveOrgAddress(orgId, input) {
+      requireUser();
+      if (!canManageOrg(orgId)) fail('權限不足');
+      if (!db.organizations.some((o) => o.id === orgId)) fail('找不到公司');
+      requireWritable();
+      const clean = cleanAddressInput(input);
+      const msg = validateAddressInput(clean);
+      if (msg) fail(msg);
+      const next = { org_id: orgId, ...clean, updated_at: new Date().toISOString() };
+      db.orgAddresses = [...db.orgAddresses.filter((a) => a.org_id !== orgId), next];
       commit();
     },
 

@@ -8,6 +8,7 @@ import {
   type GuidePage,
   type Member,
   type MemberPrivate,
+  type OrgAddress,
   type OrgSquad,
   type Organization,
   type Role,
@@ -42,7 +43,7 @@ export interface DemoContact {
 }
 
 export interface DemoDb {
-  version: 9;
+  version: 10;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
@@ -57,6 +58,8 @@ export interface DemoDb {
   /** 委外廠商與其帳號 */
   vendors: Vendor[];
   vendorContacts: DemoVendorContact[];
+  /** 公司地址（對應 org_addresses） */
+  orgAddresses: OrgAddress[];
   /** 活動指南頁面（對應 guide_pages） */
   guidePages: GuidePage[];
   users: DemoUser[];
@@ -277,7 +280,7 @@ export function createSeed(): DemoDb {
   ];
 
   return {
-    version: 9,
+    version: 10,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',
@@ -301,6 +304,20 @@ export function createSeed(): DemoDb {
     events: DEMO_EVENTS.map((e) => ({ ...e, rules: DEMO_RULES[e.id] ?? '' })),
     entries,
     squads,
+    // 範例：六角科技已填寫地址（樣衣同上）；其他公司尚未填寫
+    orgAddresses: [
+      {
+        org_id: 'org-1',
+        shuttle_address: '（範例）台北市內湖區瑞光路 100 號 1 樓大廳',
+        shuttle_leader_name: '（範例）陳車長',
+        shuttle_leader_phone: '0912-000-111',
+        sample_address: null,
+        sample_same: true,
+        sample_recipient_name: '（範例）林收件',
+        sample_recipient_phone: '02-2700-0000 #123',
+        updated_at: '2026-11-20T03:00:00.000Z',
+      },
+    ],
     vendors: [{ id: 'vendor-1', name: '（範例）活動執行公司', invite_code: 'VENDOR01', account_limit: 3 }],
     vendorContacts: [{ user_id: 'u-vendor', vendor_id: 'vendor-1', created_at: '2026-11-19T01:00:00.000Z' }],
     guidePages: ['venue', 'schedule', 'uniforms', 'meals', 'transport'].map((id) => ({

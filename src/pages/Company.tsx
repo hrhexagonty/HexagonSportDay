@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { Figure, GenderLegend, GhostFigure } from '../components/Figure';
+import { OrgAddressForm } from '../components/OrgAddressForm';
 import { useToast } from '../components/Toast';
 import { Badge, EmptyState, ErrorBox, Eyebrow, IssueList, Loading } from '../components/ui';
 import { api } from '../lib/api';
+import { formatDateTime } from '../lib/format';
+import { missingAddressFields } from '../lib/orgAddress';
 import {
   checkAddSquadMember,
   checkSubmitSquad,
@@ -13,10 +16,19 @@ import {
   registrationOpen,
   teamSizeLabel,
 } from '../lib/rules';
-import { GENDER_LABEL, type OrgSquad, type RosterMember, type Settings, type SportEvent } from '../lib/types';
+import {
+  GENDER_LABEL,
+  type OrgAddress,
+  type OrgSquad,
+  type RosterMember,
+  type Settings,
+  type SportEvent,
+} from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
-// 我的公司（健力報名）：顯示公司在各分隊的同仁（人偶，只有姓名與性別），以拖曳組成公司健力隊伍
+// 我的公司：填寫接駁車（接送地址、車長）與樣衣寄送（地址、收件人）資料，並以拖曳組成公司健力隊伍
+// - 同公司各分隊的窗口共用一份；樣衣寄送地址可勾選「同上」
+// - 健力：顯示公司在各分隊的同仁（人偶，只有姓名與性別）
 // - 「組成隊伍」建立一組空白報名區塊（草稿）；同仁拖進區塊即加入，拖回左側或按 × 移出
 // - 送出時檢查人數與女性下限（與 DB trigger 同規則），通過才成隊；截止前可取消送出再修改
 // - 觸控裝置：先點人偶，再點隊伍區塊
@@ -499,6 +511,34 @@ function CompanyBoard({
   );
 }
 
+/** 接駁車與樣衣寄送卡片 */
+function AddressCard({
+  orgId,
+  address,
+  editable,
+  onSaved,
+}: {
+  orgId: string;
+  address: OrgAddress | null;
+  editable: boolean;
+  onSaved: () => void;
+}) {
+  const missing = missingAddressFields(address);
+  return (
+    <section className="card stack address-card">
+      <div className="title-row">
+        <h2>接駁車與樣衣寄送</h2>
+        {missing.length ? <Badge tone="warn">待填寫 {missing.length} 項</Badge> : <Badge tone="ok">已填寫</Badge>}
+      </div>
+      <p className="muted small">
+        同公司各分隊的窗口共用這份資料，任一位修改後其他窗口都會看到。
+        {address && `最後更新：${formatDateTime(address.updated_at)}`}
+      </p>
+      <OrgAddressForm key={`${orgId}-${address?.updated_at ?? 'new'}`} orgId={orgId} address={address} editable={editable} onSaved={onSaved} />
+    </section>
+  );
+}
+
 export default function CompanyPage() {
   const { session } = useAuth();
   const [params, setParams] = useSearchParams();
@@ -517,13 +557,14 @@ export default function CompanyPage() {
 
   const q = useAsync(async () => {
     if (!orgId) return null;
-    const [settings, events, roster, squads] = await Promise.all([
+    const [settings, events, roster, squads, addresses] = await Promise.all([
       api.getSettings(),
       api.listEvents(),
       api.listOrgRoster(orgId),
       api.listOrgSquads(orgId),
+      api.listOrgAddresses(orgId),
     ]);
-    return { settings, events, roster, squads };
+    return { settings, events, roster, squads, address: addresses[0] ?? null };
   }, [orgId]);
 
   if (!orgId) return <Navigate to="/join" replace />;
@@ -536,7 +577,7 @@ export default function CompanyPage() {
           <Eyebrow>My company</Eyebrow>
           <h1>{org.orgName}</h1>
           <p className="muted">
-            你是「{org.teams.join('、')}」的窗口。這裡列出公司在各分隊的所有同仁（只顯示姓名與性別），用來組成公司健力隊伍。
+            你是「{org.teams.join('、')}」的窗口。請填寫公司的接駁車接送地址與車長、樣衣寄送地址與收件人；下方列出公司在各分隊的所有同仁（只顯示姓名與性別），用來組成公司健力隊伍。
           </p>
         </div>
       </div>
@@ -567,6 +608,14 @@ export default function CompanyPage() {
       ) : (
         <>
           {!registrationOpen(q.data.settings) && <div className="notice notice-err">報名已截止，資料僅供檢視。</div>}
+          <AddressCard
+            key={`address-${orgId}`}
+            orgId={orgId}
+            // 切換公司時，新資料載入前不顯示上一家公司的地址
+            address={q.data.address?.org_id === orgId ? q.data.address : null}
+            editable={registrationOpen(q.data.settings)}
+            onSaved={q.reload}
+          />
           <CompanyBoard
             key={orgId}
             orgId={orgId}

@@ -1,11 +1,13 @@
 // 正式環境資料存取：所有權限檢查都交給 Supabase RLS、DB trigger 與 RPC
 import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { normalizeInviteCode } from '../inviteCode';
+import { cleanAddressInput, validateAddressInput } from '../orgAddress';
 import type {
   EventEntry,
   GuidePage,
   Member,
   MemberPrivate,
+  OrgAddress,
   OrgName,
   OrgSquad,
   Organization,
@@ -39,6 +41,10 @@ function translateError(error: PostgrestError): string {
   if (error.code === '23514' && text.includes('vendors_name')) return '請輸入廠商名稱';
   if (error.code === '23514' && text.includes('account_limit')) return '帳號數需為 0 以上的整數';
   if (error.code === '23514' && text.includes('guide_pages_content')) return '內容太大，請減少或縮小圖片';
+  if (error.code === '23514' && text.includes('org_addresses') && text.includes('_phone_check'))
+    return '電話只能包含數字、空格與 + - ( ) #，6–30 字';
+  if (error.code === '23514' && text.includes('org_addresses') && text.includes('_name_check')) return '姓名不可超過 50 字';
+  if (error.code === '23514' && text.includes('org_addresses')) return '地址不可超過 200 字';
   if (error.code === '23503' && text.includes('members_team_org_fkey')) return '此公司未參與該隊伍';
   if (error.code === '42501') return '權限不足';
   // P0001 為 trigger / RPC 主動丟出的中文訊息，直接顯示
@@ -459,6 +465,27 @@ export function createSupabaseApi(url: string, key: string): DataApi {
           .select('id'),
       );
       if (!rows?.length) throw new Error('找不到隊伍或無權限');
+    },
+
+    async listOrgAddresses(orgId) {
+      let q = sb
+        .from('org_addresses')
+        .select(
+          'org_id, shuttle_address, shuttle_leader_name, shuttle_leader_phone, sample_address, sample_same, sample_recipient_name, sample_recipient_phone, updated_at',
+        );
+      if (orgId) q = q.eq('org_id', orgId);
+      return run(q) as Promise<OrgAddress[]>;
+    },
+
+    async saveOrgAddress(orgId, input) {
+      const clean = cleanAddressInput(input);
+      const msg = validateAddressInput(clean);
+      if (msg) throw new Error(msg);
+      // 一家公司一列：沒有就新增、有就更新（更新時間由 DB trigger 設定）
+      const rows = await run(
+        sb.from('org_addresses').upsert({ org_id: orgId, ...clean }, { onConflict: 'org_id' }).select('org_id'),
+      );
+      if (!rows?.length) throw new Error('權限不足');
     },
 
     async listEntries(filter) {

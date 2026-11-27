@@ -4,6 +4,8 @@ import type {
   GuidePage,
   Member,
   MemberInput,
+  OrgAddress,
+  OrgAddressInput,
   OrgInput,
   OrgName,
   OrgSquad,
@@ -72,6 +74,7 @@ export type InviteInfo =
  * - 隊員個資 Member.private：只有「該隊 × 該公司」的窗口與管理員看得到，其餘為 null
  * - 公司完整資料、邀請碼、窗口名單：只有管理員
  * - 公司同仁名單（跨分隊，只有姓名、性別）與公司組隊：該公司（任一隊）的窗口與管理員
+ * - 公司地址（接駁車接送、樣衣寄送）：該公司（任一隊）的窗口與管理員可讀寫，委外廠商唯讀
  * - 委外廠商：唯讀全部隊伍、隊員、報名與公司組隊；個資（證號、生日、手機）與隊長電話為隱碼；
  *   可修改活動設定與比賽項目；看不到公司完整資料、邀請碼、窗口名單
  */
@@ -170,6 +173,12 @@ export interface DataApi {
   removeSquadMember(squadId: string, memberId: string): Promise<void>;
   /** 送出（檢查人數與女性下限）或取消送出 */
   setSquadSubmitted(id: string, submitted: boolean): Promise<void>;
+
+  // ---- 公司地址（接駁車接送地址、樣衣寄送地址） ----
+  /** 不指定公司 = 可見的全部（管理員、委外廠商為全部）；尚未填寫的公司沒有資料列 */
+  listOrgAddresses(orgId?: string): Promise<OrgAddress[]>;
+  /** 新增或更新；截止後只有管理員可改 */
+  saveOrgAddress(orgId: string, input: OrgAddressInput): Promise<void>;
 
   // ---- 項目報名 ----
   listEntries(filter?: { teamId?: string }): Promise<EventEntry[]>;

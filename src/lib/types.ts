@@ -154,6 +154,23 @@ export interface OrgSquad {
   member_ids: string[];
 }
 
+/**
+ * 公司地址與聯絡人（org_addresses 表，一家公司一列）：該公司任一隊的窗口填寫，管理員可代填，委外廠商唯讀（含完整電話）
+ * sample_same = 樣衣寄送地址「同上」（此時 sample_address 為 null，顯示時取接駁車接送地址）
+ * 車長、樣衣收件人的姓名與電話屬於個資，清除個資時一併清除
+ */
+export interface OrgAddress {
+  org_id: string;
+  shuttle_address: string | null;
+  shuttle_leader_name: string | null;
+  shuttle_leader_phone: string | null;
+  sample_address: string | null;
+  sample_same: boolean;
+  sample_recipient_name: string | null;
+  sample_recipient_phone: string | null;
+  updated_at: string;
+}
+
 /** 項目報名；隊伍由 member 推得 */
 export interface EventEntry {
   event_id: string;
@@ -167,6 +184,7 @@ export type TeamInput = Pick<Team, 'name' | 'captain_name' | 'captain_phone'>;
 export type TeamPatch = Partial<TeamInput & Pick<Team, 'contact_limit'>>;
 export type MemberInput = Pick<Member, 'name' | 'gender'> & MemberPrivate;
 export type VendorInput = Pick<Vendor, 'name' | 'account_limit'>;
+export type OrgAddressInput = Omit<OrgAddress, 'org_id' | 'updated_at'>;
 export type EventInput = Pick<
   SportEvent,
   'name' | 'description' | 'min_per_team' | 'max_per_team' | 'min_female' | 'rules' | 'video_url'

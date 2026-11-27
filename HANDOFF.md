@@ -11,7 +11,7 @@
 | --- | --- |
 | 程式碼 | `main` 乾淨，無未提交變更；最新功能 commit `2676288`（本機另有不提交的資安評估報告，見第 6 節） |
 | 部署 | GitHub Actions（測試 → 建置 → 部署）已成功；網站 https://hrhexagonty.github.io/HexagonSportDay/ 為最新版 |
-| 資料庫 | 10 支 migration **全部已套用**到正式 Supabase（見第 3 節） |
+| 資料庫 | 12 支 migration **全部已套用**到正式 Supabase（見第 3 節） |
 | 進行中的工作 | 無。等待使用者提出下一個需求 |
 | 正式站使用情況 | 使用者已開始使用：已發放邀請碼（29 組隊伍 × 公司），已有窗口完成註冊 |
 | 資安 | 2026-11-23 評估、11-26 修正上線；剩使用者自行處理的帳號與營運設定（見第 8 節） |
@@ -81,6 +81,8 @@
 | `20261124000000_guide_pages.sql` | 活動指南五個頁面（`guide_pages`）；登入可讀、管理員與委外廠商可改 | 2026-11-20 |
 | `20261125000000_security_hardening.sql` | 資安強化：已綁定身分才能讀指南與公司名稱（`is_participant`）、身分證重複訊息不透露、anon 撤銷敏感資料表權限、指南不可新增刪除 | 2026-11-26 |
 | `20261126000000_invite_throttle.sql` | 邀請碼查詢節流：查錯記錄 IP（`invite_lookup_failures`）並回傳空結果，同一 IP 15 分鐘查錯 20 次暫停；撤銷 `lookup_team_invite` | 2026-11-26 |
+| `20261127000000_org_addresses.sql` | 公司地址（`org_addresses`）：接駁車接送地址、樣衣寄送地址（可同上）；該公司窗口與管理員可寫、委外廠商唯讀、截止鎖定 | 2026-11-27 |
+| `20261128000000_org_address_contacts.sql` | 車長姓名 / 電話、樣衣收件人姓名 / 電話（電話格式 check）；`purge_private_data()` 一併清除這四欄 | 2026-11-27 |
 
 **正式資料與種子資料的差異**：健力（powerlifting）的女性下限在正式資料庫是 **3**，migration 種子與 `demoSeed.ts` 仍是 4。項目設定以資料庫為準，程式不寫死。
 
@@ -125,8 +127,8 @@
 - 推送 `main` 即自動部署，推送前確認 `npm test` 與 `npm run build` 都通過。
 
 ### 資料庫 schema 變更流程
-1. 新增 `supabase/migrations/<timestamp>_<name>.sql`（時間戳接在 `20261126000000` 之後），**不要修改已套用的檔案**。
-2. 同步更新：`src/lib/types.ts`、`demo.ts`（模擬 RLS / trigger）、`rules.ts` 等前端規則（見 CLAUDE.md 的同步表）；展示資料結構變更時把 `demo.ts` 的 `STORAGE_KEY` 與 `demoSeed.ts` 的 version 一起升版（目前 v9）。新增資料表要 `revoke all ... from anon, authenticated`（Supabase 預設會授權）；需要「登入者可讀」的資料用 `is_participant()` 判斷。
+1. 新增 `supabase/migrations/<timestamp>_<name>.sql`（時間戳接在 `20261128000000` 之後），**不要修改已套用的檔案**。
+2. 同步更新：`src/lib/types.ts`、`demo.ts`（模擬 RLS / trigger）、`rules.ts` 等前端規則（見 CLAUDE.md 的同步表）；展示資料結構變更時把 `demo.ts` 的 `STORAGE_KEY` 與 `demoSeed.ts` 的 version 一起升版（目前 v10）。新增資料表要 `revoke all ... from anon, authenticated`（Supabase 預設會授權）；需要「登入者可讀」的資料用 `is_participant()` 判斷。
 3. 跑 `npx vitest run supabase/tests`、`npm test`、`npm run build`。
 4. 請使用者到 Supabase SQL Editor 執行該檔全文。使用者回覆「**SQL 已執行**」後，再提交 / 推送前端。SQL 含 `drop` / `revoke` / `delete` 等字時，SQL Editor 會跳出「Potential issue detected… destructive operations」警告：請事先說明是哪些語句觸發、會不會動到資料，讓使用者放心按 Run query。
 5. 前端依賴新 schema 時，**SQL 套用前不可推送**（否則正式站會壞）。順序固定是「先 SQL → 再推送」，中間會有短暫的新舊不相容空窗。
@@ -169,7 +171,7 @@
 
 ### 測試與驗證技巧
 - 單元 + 資料庫測試：`npm test`（PGlite 實際跑全部 migration 並模擬 `auth.uid()`、anon / authenticated）。DB 測試輔助函式：`as`、`asAnon`、`addMembers`、`row`、`memberId`、`twId(gender, seq)`；測試用證號要注意性別碼（男 `A1…`、女 `B2…`），否則會先觸發「性別不符」。
-- 展示模式資料存在 localStorage `hexagon-sportday-demo-v9`；展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`），委外廠商為 `VENDOR01`；登入頁有各角色（含委外廠商）的快速登入按鈕。
+- 展示模式資料存在 localStorage `hexagon-sportday-demo-v10`；展示資料的邀請碼為「公司前綴 + 隊伍編號」（例如 `TECH03`），委外廠商為 `VENDOR01`；登入頁有各角色（含委外廠商）的快速登入按鈕。
 - 內建瀏覽器窗格很窄，視覺檢查改用 playwright-core + 系統 Edge 截圖（之前的腳本放在舊工作階段的暫存資料夾，已不可用，需要時重新安裝 / 撰寫）。窗格被隱藏時截圖會是全黑，改用 `javascript_tool` 讀 DOM 與 `getBoundingClientRect` 檢查版面。
 - 正式站唯讀驗證：從 `.env.local` 讀 URL 與 publishable key（不要印出），用 curl 以 anon 呼叫 REST / RPC，只輸出狀態碼與訊息前段；要測寫入權限時用不可能成立的條件（例如 `settings?id=eq.2`），即使有權限也不會改到資料。腳本寫在暫存資料夾。
 - 邀請碼節流：在正式站測試時同一 IP 查錯不要超過 20 次，否則使用者的對外 IP（可能是整個辦公室）會被鎖 15 分鐘；也不要帶偽造的 `CF-Connecting-IP`（Cloudflare 會直接回 403）。
@@ -185,6 +187,7 @@
 - [x] **資安強化（2026-11-26 上線，`dcdafd4`）**：依本機的資安評估報告（`資安評估報告_2026-11-23.md`，已列入 `.git/info/exclude`，**不可提交到公開 repo**）完成 M1、M3、L1、L2、L4。`20261125000000_security_hardening.sql` 已套用並以未登入身分驗證（敏感資料表與 `is_participant` / `org_names` 皆回 42501，`settings`、`events`、`lookup_invite` 照常）；正式站未登入頁面監聽 `securitypolicyviolation` 為 0，使用者登入後檢查活動指南與後台也正常。報告中標為「可選」或「視需要」的項目（擋下沒有邀請碼的註冊、限制外部圖片、repo 改 private、換主機）使用者決定暫不處理。
 - [x] **邀請碼查詢節流（2026-11-26 套用）**：`20261126000000_invite_throttle.sql` 已套用，前端不需改版（空結果原本就顯示「邀請碼錯誤」）。正式環境實測：`lookup_team_invite` 回 42501；帶偽造 `X-Forwarded-For` / `X-Real-IP` 查假邀請碼回 `[]`，失敗紀錄的 `source` 為 `cf-connecting-ip`、IP 為真實來源（偽造值無效）；自帶 `CF-Connecting-IP` 的請求被 Cloudflare 以 403（error code 1000）擋下。
 - [x] Dependabot：2026-11-26 已以 `gh api` 開啟漏洞警示（vulnerability-alerts）與自動安全更新（automated-security-fixes）。Dependabot 的 PR 不會跑 CI（workflow 只在推送 `main` 時執行），合併後才在部署流程中跑測試，測試失敗就不會部署；收到 Dependabot PR 時，合併前先在本機跑 `npm test` 與 `npm run build`。
+- [ ] **接駁與樣衣寄送（2026-11-27）**：「我的公司」新增「接駁車與樣衣寄送」卡片：接駁車接送地址、車長姓名 / 電話、樣衣寄送地址（可勾選同上）、樣衣收件人姓名 / 電話；後台新增「接駁與樣衣」分頁（統計、搜尋、CSV、管理員代填）。`20261127000000_org_addresses.sql` 已套用（未登入讀寫 `org_addresses` 皆回 42501）；`20261128000000_org_address_contacts.sql` 已套用（未登入查詢新欄位回 42501、不存在的欄位回 42703，表示欄位已建立）。使用者決定：委外廠商看得到完整電話、用詞統一為「樣衣」。清除個資時一併清除車長與收件人（地址保留）。展示資料升版為 v10（六角科技已填範例資料）。尚未在正式站實測窗口填寫與後台顯示（避免建立測試資料），請使用者以實際公司資料確認。
 - [ ] 資安評估中需使用者自行處理的設定：Supabase / GitHub 兩步驟驗證、密碼長度與 Leaked password protection、收斂各隊窗口名額、個資匯出與清除流程（見報告第 6、7 節）。
 
 - [ ] **活動指南正式站實測**：`20261124000000_guide_pages.sql` 已套用；2026-11-26 使用者登入後檢查活動指南各頁與後台顯示正常。尚未驗證：實際編輯存檔，以及大內容（數 MB 圖片）是否會被 Supabase API 的請求大小限制擋下。

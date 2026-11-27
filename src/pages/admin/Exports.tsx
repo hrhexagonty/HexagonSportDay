@@ -120,7 +120,7 @@ export default function Exports({ data, onChanged }: { data: AdminData; onChange
 
   async function purge() {
     const answer = prompt(
-      `將永久刪除 ${privateCount} 位隊員的個資（身分證字號、生日、手機、尺寸、用餐、特殊需求），僅保留姓名、性別與報名紀錄。\n此動作無法復原，請先完成所需匯出。\n\n確定請輸入「清除個資」：`,
+      `將永久刪除 ${privateCount} 位隊員的個資（身分證字號、生日、手機、尺寸、用餐、特殊需求），以及各公司車長、樣衣收件人的姓名與電話；僅保留隊員姓名、性別、報名紀錄與公司地址。\n此動作無法復原，請先完成所需匯出。\n\n確定請輸入「清除個資」：`,
     );
     if (answer === null) return;
     if (answer.trim() !== '清除個資') {
@@ -161,7 +161,7 @@ export default function Exports({ data, onChanged }: { data: AdminData; onChange
         <div>
           <h3>活動結束後清除個資</h3>
           <p className="muted small">
-            依個資保護原則，活動結束且保險期間屆滿後，請刪除所有隊員個資。清除後僅保留姓名、性別、隊伍與報名紀錄（供成績與紀念用途）。
+            依個資保護原則，活動結束且保險期間屆滿後，請刪除所有隊員個資（車長、樣衣收件人的姓名與電話一併清除）。清除後僅保留姓名、性別、隊伍與報名紀錄（供成績與紀念用途）。
             目前有 {privateCount} 位隊員的個資。
           </p>
         </div>
