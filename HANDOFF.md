@@ -1,6 +1,6 @@
 # 交接文件：HexagonSportDay 運動會報名平台
 
-> 更新日期：2026-11-27　｜　最新功能 commit：`2676288`（`main`，已推送並部署；之後只有本檔的更新 commit）
+> 更新日期：2026-11-27　｜　最新功能 commit：`7ab4c6b`（`main`，已推送並部署；之後只有本檔的更新 commit）
 > 本檔記錄**進度、決策、工作慣例與環境細節**；架構、資料模型、前後端規則同步表、UI 規範請看 [CLAUDE.md](CLAUDE.md)，兩份都要讀。
 
 ---
@@ -9,8 +9,8 @@
 
 | 項目 | 狀態 |
 | --- | --- |
-| 程式碼 | `main` 乾淨，無未提交變更；最新功能 commit `2676288`（本機另有不提交的資安評估報告，見第 6 節） |
-| 部署 | GitHub Actions（測試 → 建置 → 部署）已成功；網站 https://hrhexagonty.github.io/HexagonSportDay/ 為最新版 |
+| 程式碼 | `main` 乾淨，無未提交變更；最新功能 commit `7ab4c6b`（本機另有不提交的資安評估報告，見第 6 節） |
+| 部署 | GitHub Actions（測試 → 建置 → 部署）已成功（`7ab4c6b` 為 run 45969531618）；網站 https://hrhexagonty.github.io/HexagonSportDay/ 為最新版 |
 | 資料庫 | 12 支 migration **全部已套用**到正式 Supabase（見第 3 節） |
 | 進行中的工作 | 無。等待使用者提出下一個需求 |
 | 正式站使用情況 | 使用者已開始使用：已發放邀請碼（29 組隊伍 × 公司），已有窗口完成註冊 |
@@ -39,10 +39,17 @@
 | 11-20 | `99fb8e6` | 新增活動指南（場地配置、當天活動流程、隊服顏色對照、餐食內容、交通規劃）；後台拆成「活動設定」與「競賽項目設定」，以所見即所得 / HTML 原始碼編輯 |
 | 11-26 | `dcdafd4` | 資安強化：已綁定身分才能讀活動指南與公司名稱、CSP、身分證重複訊息不透露證號、CSV 公式注入防護、撤銷未登入者的敏感資料表權限 |
 | 11-26 | `2676288` | 邀請碼查詢節流（同一 IP 15 分鐘查錯 20 次暫停）、撤銷舊版 `lookup_team_invite` |
+| 11-27 | `7ab4c6b` | 「我的公司」新增接駁車與樣衣寄送資料（接送地址、車長、樣衣寄送地址可同上、樣衣收件人）；後台新增「接駁與樣衣」分頁 |
 
 另外產出（不在 repo）：邀請碼便條 PDF，見第 7 節。
 
 ### 最近變更重點
+
+**接駁車與樣衣寄送（`7ab4c6b`）**
+- DB（`20261127000000_org_addresses.sql`）：`org_addresses`（一家公司一列：`shuttle_address`、`sample_address`、`sample_same`）；該公司任一隊的窗口（`is_org_contact`）與管理員可 select / insert / update，委外廠商唯讀，不開放刪除（刪除公司時 cascade）；`guard_registration_open` 截止鎖定；`org_addresses_before_write` 去除空白、同上時清空 `sample_address`、記錄 `updated_at`；撤銷 anon 全部權限。
+- DB（`20261128000000_org_address_contacts.sql`）：新增 `shuttle_leader_name` / `_phone`、`sample_recipient_name` / `_phone`（姓名 ≤ 50 字、電話只能數字空格與 `+ - ( ) #` 6–30 字）；`purge_private_data()` 改為一併清除這四欄（地址保留，回傳值仍為隊員筆數）。
+- 前端：`src/lib/orgAddress.ts`（清理、驗證、`sampleAddressOf`、`missingAddressFields`）；共用表單 `src/components/OrgAddressForm.tsx`（「我的公司」頁卡片與後台代填共用，以 `key={updated_at}` 掛載）；後台 `src/pages/admin/Addresses.tsx`（分頁名稱「接駁與樣衣」：統計、搜尋、篩選、CSV、管理員代填）；`DataApi` 新增 `listOrgAddresses` / `saveOrgAddress`（Supabase 端以 upsert 寫入）；「清除所有個資」確認文字已更新。
+- 展示資料升版為 v10（六角科技已填範例資料）。測試：資料庫 58 項，全部 115 項。
 
 **資安強化（`dcdafd4`、`2676288`，依 2026-11-23 資安評估）**
 - DB（`20261125000000_security_hardening.sql`）：新增 `is_participant()`（管理員、委外廠商或已綁定隊伍的窗口），控制 `guide_pages` 讀取與 `org_names()`；`add_members` / `update_member` 的身分證重複改為通用訊息；撤銷 anon 對敏感資料表的權限與 `settings` / `events` 的寫入權；撤銷 authenticated 對 `guide_pages` 的新增 / 刪除。
@@ -108,6 +115,7 @@
   - 廠商帳號不能同時擔任隊伍窗口。
 - 頁尾最下方固定顯示：主辦單位：特耀餐飲服務股份有限公司；承辦廠商：桔中人娛樂文化有限公司。
 - 活動指南（場地配置、當天活動流程、隊服顏色對照、餐食內容、交通規劃）：導覽列以「活動指南 ▾」下拉選單呈現；登入才能看；管理員與委外廠商在後台「活動設定」編輯；編輯器為所見即所得 + 可切換 HTML 原始碼（顯示前過濾危險語法）；圖片壓縮後存在頁面內容（每頁約 5MB 上限），不用 Supabase Storage。後台原「活動與項目設定」拆成「活動設定」與「競賽項目設定」兩個頁籤。
+- 接駁車與樣衣寄送（2026-11-27）：在「我的公司」填寫，**以公司為單位**（同公司各分隊窗口共用一份）。欄位：接駁車接送地址、車長姓名 / 電話、樣衣寄送地址（可勾「同上」）、樣衣收件人姓名 / 電話。未填只標示「待填寫 N 項」，不阻擋操作；報名截止後只有管理員能改（後台可代填）。**委外廠商看得到完整電話**（廠商要聯絡安排接駁與寄送，例外於隊長電話隱碼）。畫面用詞統一為「**樣衣**」（使用者曾寫「樣服」，已確認統一）。清除個資時車長與收件人一併清除。
 - 資安（2026-11-23 評估）：使用者選擇處理 M1、M2 節流、M3、L1、L2、L4 與 Dependabot，已全部上線。**決定暫不處理**：擋下沒有邀請碼的註冊（需改管理員建立流程）、活動指南限制外部圖片、repo 改 private、換主機（防點擊劫持）。除非使用者再提起，不要重複提議。
 
 ---
@@ -132,7 +140,7 @@
 3. 跑 `npx vitest run supabase/tests`、`npm test`、`npm run build`。
 4. 請使用者到 Supabase SQL Editor 執行該檔全文。使用者回覆「**SQL 已執行**」後，再提交 / 推送前端。SQL 含 `drop` / `revoke` / `delete` 等字時，SQL Editor 會跳出「Potential issue detected… destructive operations」警告：請事先說明是哪些語句觸發、會不會動到資料，讓使用者放心按 Run query。
 5. 前端依賴新 schema 時，**SQL 套用前不可推送**（否則正式站會壞）。順序固定是「先 SQL → 再推送」，中間會有短暫的新舊不相容空窗。
-6. 能用 publishable key 驗證的就驗證（例如以 anon 呼叫新 RPC，回 `42501` 代表函式存在但無權限、`PGRST202` 代表不存在）；驗證不了的（例如欄位是否可 null）請使用者在 SQL Editor 查 `information_schema.columns`。
+6. 能用 publishable key 驗證的就驗證（例如以 anon 呼叫新 RPC，回 `42501` 代表函式存在但無權限、`PGRST202` 代表不存在；新資料表回 `42501`、不存在回 `PGRST205`；新欄位以 `select=欄位` 查詢，回 `42501` 代表欄位存在、`42703` 代表不存在）；驗證不了的（例如欄位是否可 null）請使用者在 SQL Editor 查 `information_schema.columns`。
 7. 更新 CLAUDE.md 的 migration 狀態段落。
 
 ---
@@ -187,7 +195,7 @@
 - [x] **資安強化（2026-11-26 上線，`dcdafd4`）**：依本機的資安評估報告（`資安評估報告_2026-11-23.md`，已列入 `.git/info/exclude`，**不可提交到公開 repo**）完成 M1、M3、L1、L2、L4。`20261125000000_security_hardening.sql` 已套用並以未登入身分驗證（敏感資料表與 `is_participant` / `org_names` 皆回 42501，`settings`、`events`、`lookup_invite` 照常）；正式站未登入頁面監聽 `securitypolicyviolation` 為 0，使用者登入後檢查活動指南與後台也正常。報告中標為「可選」或「視需要」的項目（擋下沒有邀請碼的註冊、限制外部圖片、repo 改 private、換主機）使用者決定暫不處理。
 - [x] **邀請碼查詢節流（2026-11-26 套用）**：`20261126000000_invite_throttle.sql` 已套用，前端不需改版（空結果原本就顯示「邀請碼錯誤」）。正式環境實測：`lookup_team_invite` 回 42501；帶偽造 `X-Forwarded-For` / `X-Real-IP` 查假邀請碼回 `[]`，失敗紀錄的 `source` 為 `cf-connecting-ip`、IP 為真實來源（偽造值無效）；自帶 `CF-Connecting-IP` 的請求被 Cloudflare 以 403（error code 1000）擋下。
 - [x] Dependabot：2026-11-26 已以 `gh api` 開啟漏洞警示（vulnerability-alerts）與自動安全更新（automated-security-fixes）。Dependabot 的 PR 不會跑 CI（workflow 只在推送 `main` 時執行），合併後才在部署流程中跑測試，測試失敗就不會部署；收到 Dependabot PR 時，合併前先在本機跑 `npm test` 與 `npm run build`。
-- [ ] **接駁與樣衣寄送（2026-11-27）**：「我的公司」新增「接駁車與樣衣寄送」卡片：接駁車接送地址、車長姓名 / 電話、樣衣寄送地址（可勾選同上）、樣衣收件人姓名 / 電話；後台新增「接駁與樣衣」分頁（統計、搜尋、CSV、管理員代填）。`20261127000000_org_addresses.sql` 已套用（未登入讀寫 `org_addresses` 皆回 42501）；`20261128000000_org_address_contacts.sql` 已套用（未登入查詢新欄位回 42501、不存在的欄位回 42703，表示欄位已建立）。使用者決定：委外廠商看得到完整電話、用詞統一為「樣衣」。清除個資時一併清除車長與收件人（地址保留）。展示資料升版為 v10（六角科技已填範例資料）。尚未在正式站實測窗口填寫與後台顯示（避免建立測試資料），請使用者以實際公司資料確認。
+- [ ] **接駁與樣衣寄送（2026-11-27）**：「我的公司」新增「接駁車與樣衣寄送」卡片：接駁車接送地址、車長姓名 / 電話、樣衣寄送地址（可勾選同上）、樣衣收件人姓名 / 電話；後台新增「接駁與樣衣」分頁（統計、搜尋、CSV、管理員代填）。`20261127000000_org_addresses.sql` 已套用（未登入讀寫 `org_addresses` 皆回 42501）；`20261128000000_org_address_contacts.sql` 已套用（未登入查詢新欄位回 42501、不存在的欄位回 42703，表示欄位已建立）。使用者決定：委外廠商看得到完整電話、用詞統一為「樣衣」。清除個資時一併清除車長與收件人（地址保留）。展示資料升版為 v10（六角科技已填範例資料）。已推送並部署（`7ab4c6b`）。尚未在正式站實測窗口填寫與後台顯示（避免建立測試資料），請使用者以實際公司資料確認；清除個資函式更新後也未在正式站執行驗證（只有管理員能呼叫，且會真的清除資料）。
 - [ ] 資安評估中需使用者自行處理的設定：Supabase / GitHub 兩步驟驗證、密碼長度與 Leaked password protection、收斂各隊窗口名額、個資匯出與清除流程（見報告第 6、7 節）。
 
 - [ ] **活動指南正式站實測**：`20261124000000_guide_pages.sql` 已套用；2026-11-26 使用者登入後檢查活動指南各頁與後台顯示正常。尚未驗證：實際編輯存檔，以及大內容（數 MB 圖片）是否會被 Supabase API 的請求大小限制擋下。
