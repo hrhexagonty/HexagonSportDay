@@ -41,6 +41,7 @@ function translateError(error: PostgrestError): string {
   if (error.code === '23514' && text.includes('vendors_name')) return '請輸入廠商名稱';
   if (error.code === '23514' && text.includes('account_limit')) return '帳號數需為 0 以上的整數';
   if (error.code === '23514' && text.includes('guide_pages_content')) return '內容太大，請減少或縮小圖片';
+  if (error.code === '23514' && text.includes('shuttle_bus_count')) return '需要幾台車請填 1–99 的整數';
   if (error.code === '23514' && text.includes('org_addresses') && text.includes('_phone_check'))
     return '電話只能包含數字、空格與 + - ( ) #，6–30 字';
   if (error.code === '23514' && text.includes('org_addresses') && text.includes('_name_check')) return '姓名不可超過 50 字';
@@ -471,7 +472,7 @@ export function createSupabaseApi(url: string, key: string): DataApi {
       let q = sb
         .from('org_addresses')
         .select(
-          'org_id, shuttle_address, shuttle_leader_name, shuttle_leader_phone, sample_address, sample_same, sample_recipient_name, sample_recipient_phone, updated_at',
+          'org_id, shuttle_bus_count, shuttle_address, shuttle_leader_name, shuttle_leader_phone, sample_address, sample_same, sample_recipient_name, sample_recipient_phone, updated_at',
         );
       if (orgId) q = q.eq('org_id', orgId);
       return run(q) as Promise<OrgAddress[]>;

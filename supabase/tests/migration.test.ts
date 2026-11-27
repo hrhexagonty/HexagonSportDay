@@ -1000,3 +1000,36 @@ describe('公司地址聯絡人（車長、樣衣收件人）', () => {
     expect(kept.rows[0].n).toBeGreaterThan(0);
   });
 });
+
+describe('接駁車台數', () => {
+  const count = async (user: string, orgName: string) =>
+    (await as<{ n: number | null }>(user, 'select shuttle_bus_count n from org_addresses where org_id = $1', [org[orgName]])).rows;
+  const setCount = (user: string, orgName: string, n: number | null) =>
+    as(user, 'update org_addresses set shuttle_bus_count = $2 where org_id = $1', [org[orgName], n]);
+
+  beforeAll(async () => {
+    await as(U.admin, 'update settings set registration_open = true where id = 1');
+  });
+
+  it('窗口可填 1–99 台，可清空；0、超過 99 被擋；委外廠商讀得到，其他公司窗口讀不到', async () => {
+    expect(await count(U.f, '戊')).toEqual([{ n: null }]);
+    await setCount(U.f, '戊', 3);
+    expect(await count(U.g, '戊')).toEqual([{ n: 3 }]);
+    expect(await count(U.v1, '戊')).toEqual([{ n: 3 }]);
+    expect(await count(U.h, '戊')).toEqual([]);
+    await expect(setCount(U.f, '戊', 0)).rejects.toThrow('org_addresses_shuttle_bus_count_check');
+    await expect(setCount(U.f, '戊', 100)).rejects.toThrow('org_addresses_shuttle_bus_count_check');
+    await setCount(U.f, '戊', 99);
+    await setCount(U.f, '戊', null);
+    expect(await count(U.f, '戊')).toEqual([{ n: null }]);
+    expect((await as(U.v1, 'update org_addresses set shuttle_bus_count = 5')).affectedRows).toBe(0);
+  });
+
+  it('報名截止後窗口不可修改台數，管理員可以', async () => {
+    await as(U.admin, 'update settings set registration_open = false where id = 1');
+    await expect(setCount(U.f, '戊', 2)).rejects.toThrow('報名已截止');
+    await setCount(U.admin, '戊', 2);
+    expect(await count(U.f, '戊')).toEqual([{ n: 2 }]);
+    await as(U.admin, 'update settings set registration_open = true where id = 1');
+  });
+});

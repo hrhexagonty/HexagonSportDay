@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
-import { MAX_ADDRESS_LENGTH, MAX_CONTACT_NAME_LENGTH } from '../lib/orgAddress';
+import { MAX_ADDRESS_LENGTH, MAX_CONTACT_NAME_LENGTH, digitsOnly, parseBusCount } from '../lib/orgAddress';
 import type { OrgAddress, OrgAddressInput } from '../lib/types';
 import { useToast } from './Toast';
 import { Field } from './ui';
 
-/** 表單欄位（皆為字串；空字串存檔時轉成 null） */
-type TextKey = Exclude<keyof OrgAddressInput, 'sample_same'>;
-type FormState = Record<TextKey, string> & { sample_same: boolean };
+/** 表單欄位（皆為字串；空字串存檔時轉成 null；台數存檔時轉成數字） */
+type TextKey = Exclude<keyof OrgAddressInput, 'sample_same' | 'shuttle_bus_count'>;
+type FormState = Record<TextKey, string> & { sample_same: boolean; shuttle_bus_count: string };
 
 const TEXT_KEYS: TextKey[] = [
   'shuttle_address',
@@ -19,6 +19,7 @@ const TEXT_KEYS: TextKey[] = [
 ];
 
 const toForm = (a: OrgAddress | null): FormState => ({
+  shuttle_bus_count: a?.shuttle_bus_count == null ? '' : String(a.shuttle_bus_count),
   shuttle_address: a?.shuttle_address ?? '',
   shuttle_leader_name: a?.shuttle_leader_name ?? '',
   shuttle_leader_phone: a?.shuttle_leader_phone ?? '',
@@ -29,7 +30,7 @@ const toForm = (a: OrgAddress | null): FormState => ({
 });
 
 /**
- * 公司地址與聯絡人表單：接駁車（接送地址、車長姓名 / 電話）、樣衣寄送（地址可勾選「同上」、收件人姓名 / 電話）
+ * 公司地址與聯絡人表單：接駁車（需要幾台車、接送地址、車長姓名 / 電話）、樣衣寄送（地址可勾選「同上」、收件人姓名 / 電話）
  * 用於「我的公司」頁（窗口）與後台「接駁與樣衣」分頁（管理員代填）
  * 呼叫端以 key={address?.updated_at} 掛載：存檔重新載入後以伺服器資料（已去除空白）重新顯示
  */
@@ -52,6 +53,7 @@ export function OrgAddressForm({
   const saved = toForm(address);
   const dirty =
     form.sample_same !== saved.sample_same ||
+    form.shuttle_bus_count !== saved.shuttle_bus_count ||
     TEXT_KEYS.some((k) => !(k === 'sample_address' && form.sample_same) && form[k].trim() !== saved[k]);
 
   const text = (key: TextKey) => ({
@@ -64,7 +66,11 @@ export function OrgAddressForm({
     e.preventDefault();
     setSaving(true);
     try {
-      await api.saveOrgAddress(orgId, { ...form, sample_address: form.sample_same ? null : form.sample_address });
+      await api.saveOrgAddress(orgId, {
+        ...form,
+        shuttle_bus_count: parseBusCount(form.shuttle_bus_count),
+        sample_address: form.sample_same ? null : form.sample_address,
+      });
       toast.ok('已儲存');
       onSaved();
     } catch (err) {
@@ -79,6 +85,24 @@ export function OrgAddressForm({
       <div className="address-groups">
         <section className="address-group">
           <h3 className="address-group-title">接駁車</h3>
+          <Field label="需要幾台車" hint="只能輸入數字（1–99）">
+            <div className="input-suffix">
+              {/*
+                只留數字（全形數字轉半形）、最多 2 位；不用 type="number"（會接受 e、小數點、負號），
+                也不用 maxLength（會在去除非數字前就截斷貼上的內容，例如「第12台」）
+              */}
+              <input
+                value={form.shuttle_bus_count}
+                onChange={(e) => setForm({ ...form, shuttle_bus_count: digitsOnly(e.target.value).slice(0, 2) })}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="例如：2"
+                aria-label="需要幾台車"
+                disabled={!editable}
+              />
+              <span>台</span>
+            </div>
+          </Field>
           <Field label="接駁車接送地址" hint="活動當天接駁車到公司接送同仁的地點">
             <input
               {...text('shuttle_address')}

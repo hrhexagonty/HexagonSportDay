@@ -18,14 +18,14 @@ import type { Member, MemberInput, Team } from '../types';
 import { createSeed, type DemoDb } from './demoSeed';
 import type { DataApi, InviteInfo } from './types';
 
-const STORAGE_KEY = 'hexagon-sportday-demo-v10';
+const STORAGE_KEY = 'hexagon-sportday-demo-v11';
 
 function load(): DemoDb {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb;
-      if (parsed.version === 10) return parsed;
+      if (parsed.version === 11) return parsed;
     }
   } catch {
     // localStorage 不可用或資料損毀時改用初始資料

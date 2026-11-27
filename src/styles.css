@@ -3378,6 +3378,23 @@ a.chip:hover {
 .address-contact {
   margin-top: 0.25rem;
 }
+.address-bus {
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+}
+/* 「需要幾台車」：窄輸入框 + 單位 */
+.input-suffix {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.input-suffix input {
+  width: 7rem;
+  text-align: center;
+}
+.input-suffix span {
+  color: var(--text-2);
+}
 /* 「樣衣寄送地址」標籤與「同上」勾選框同一列 */
 .address-sample-head {
   display: flex;

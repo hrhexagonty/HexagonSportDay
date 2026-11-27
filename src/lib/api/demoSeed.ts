@@ -43,7 +43,7 @@ export interface DemoContact {
 }
 
 export interface DemoDb {
-  version: 10;
+  version: 11;
   settings: Settings;
   organizations: Organization[];
   teams: Team[];
@@ -280,7 +280,7 @@ export function createSeed(): DemoDb {
   ];
 
   return {
-    version: 10,
+    version: 11,
     settings: {
       event_title: 'Hexagon 運動會',
       event_date: '2027-03-27',
@@ -308,6 +308,7 @@ export function createSeed(): DemoDb {
     orgAddresses: [
       {
         org_id: 'org-1',
+        shuttle_bus_count: 2,
         shuttle_address: '（範例）台北市內湖區瑞光路 100 號 1 樓大廳',
         shuttle_leader_name: '（範例）陳車長',
         shuttle_leader_phone: '0912-000-111',

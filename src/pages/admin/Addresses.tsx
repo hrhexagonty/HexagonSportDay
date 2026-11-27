@@ -38,6 +38,9 @@ export default function Addresses({ data, onChanged }: { data: AdminData; onChan
       };
     });
   const done = rows.filter((r) => r.missing.length === 0).length;
+  // 接駁車需求合計（只算已填台數的公司）
+  const busRows = rows.filter((r) => r.address?.shuttle_bus_count != null);
+  const busTotal = busRows.reduce((n, r) => n + (r.address?.shuttle_bus_count ?? 0), 0);
   const shown = rows.filter(
     (r) =>
       (filter === 'all' || (filter === 'missing' ? r.missing.length > 0 : r.missing.length === 0)) &&
@@ -49,6 +52,7 @@ export default function Addresses({ data, onChanged }: { data: AdminData; onChan
       [
         '公司',
         '參與隊伍',
+        '需要幾台車',
         '接駁車接送地址',
         '車長姓名',
         '車長電話',
@@ -63,6 +67,7 @@ export default function Addresses({ data, onChanged }: { data: AdminData; onChan
       out.push([
         org.name,
         teamNames,
+        a?.shuttle_bus_count,
         a?.shuttle_address,
         a?.shuttle_leader_name,
         a?.shuttle_leader_phone,
@@ -88,6 +93,7 @@ export default function Addresses({ data, onChanged }: { data: AdminData; onChan
           tone={orgs.length > 0 && done === orgs.length ? 'ok' : 'neutral'}
         />
         <StatCard label="待填寫" value={`${orgs.length - done} 家`} hint="由各公司窗口在「我的公司」填寫" />
+        <StatCard label="接駁車需求" value={`${busTotal} 台`} hint={`${busRows.length} / ${orgs.length} 家已填台數`} />
       </div>
 
       <section className="card stack">
@@ -115,7 +121,7 @@ export default function Addresses({ data, onChanged }: { data: AdminData; onChan
             <thead>
               <tr>
                 <th>公司</th>
-                <th>接駁車接送地址 / 車長</th>
+                <th>接駁車（台數 / 接送地址 / 車長）</th>
                 <th>樣衣寄送地址 / 收件人</th>
                 <th>最後更新</th>
                 {!readOnly && <th />}
@@ -135,6 +141,9 @@ export default function Addresses({ data, onChanged }: { data: AdminData; onChan
                       )}
                     </td>
                     <td className="address-cell">
+                      <div className="address-bus">
+                        {a?.shuttle_bus_count != null ? <b>需要 {a.shuttle_bus_count} 台</b> : <span className="muted">台數未填</span>}
+                      </div>
                       {a?.shuttle_address ?? empty}
                       <div className="muted small address-contact">
                         車長：{contactLine(a?.shuttle_leader_name, a?.shuttle_leader_phone) ?? '未填'}

@@ -161,6 +161,8 @@ export interface OrgSquad {
  */
 export interface OrgAddress {
   org_id: string;
+  /** 需要幾台接駁車（1–99；null = 未填） */
+  shuttle_bus_count: number | null;
   shuttle_address: string | null;
   shuttle_leader_name: string | null;
   shuttle_leader_phone: string | null;
